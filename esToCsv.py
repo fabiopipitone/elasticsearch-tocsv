@@ -24,40 +24,52 @@ def safe_toint_cast(string, rollback):
   except:
     return rollback
 
+def check_csv_valid_filename(filename):
+  if filename[-4:] != '.csv':
+    raise argparse.ArgumentTypeError("{} is not a valid path where to store the retrieved data. It must be a csv file".format(filename))
+  return filename
+
 ########## END UTILITY FUNCTIONS ##########
 
 ############ SCRIPT ARGUMENTS AND OPTIONS ############
 ap = argparse.ArgumentParser()
-ap.add_argument("-ho", "--host", required=False, help="Elasticsearch host. If not set, localhost will be used")
+ap.add_argument("-ho", "--host", required=False, help="Elasticsearch host. If not set, localhost will be used", default="localhost")
 ap.add_argument("-f", "--fields", required=True, help="Elasticsearch fields, passed as a string with commas between fields and no whitespaces (e.g. \"field1,field2\")")
-ap.add_argument("-e", "--export_path", required=False, help="path where to store the csv file. If not set, 'es_export.csv' will be used")
+ap.add_argument("-e", "--export_path", required=False, help="path where to store the csv file. If not set, 'es_export.csv' will be used", type=check_csv_valid_filename, default="es_export.csv")
 ap.add_argument("-sd", "--starting_date", required=False, help="query starting date")
 ap.add_argument("-ed", "--ending_date", required=False, help="query ending date")
 ap.add_argument("-t", "--time_field", required=False, help="time field to query on. If not set and --starting_date or --ending_date are set and exception will be raised")
 ap.add_argument("-q", "--query_string", required=False, help="Elasticsearch query string. Put it between quotes and escape internal quotes characters (e.g. \"one_field: foo AND another_field.keyword: \\\"bar\\\"\"")
-ap.add_argument("-p", "--port", required=False, help="Elasticsearch port. If not set, the default port 9200 will be used")
-ap.add_argument("-u", "--user", required=False, help="Elasticsearch user")
+ap.add_argument("-p", "--port", required=False, help="Elasticsearch port. If not set, the default port 9200 will be used", default=9200, type=int)
+ap.add_argument("-u", "--user", required=False, help="Elasticsearch user", default='')
 ap.add_argument("-pw", "--password", required=False, help="Elasticsearch password in clear. If set, the --secret_password will be ignored")
 ap.add_argument("-spw", "--secret_password", required=False, help="env var pointing the Elasticsearch password")
-ap.add_argument("-s", "--ssl", required=False, help="require ssl connection. Default to False. Set to True to enable it")
-ap.add_argument("-c", "--cert_verification", required=False, help="require ssl certificate verification. Default to False. Set to True to enable it")
+ap.add_argument("-s", "--ssl", required=False, help="require ssl connection. Default to False. Set to True to enable it", type=bool, default=False)
+ap.add_argument("-c", "--cert_verification", required=False, help="require ssl certificate verification. Default to False. Set to True to enable it", type=bool, default=False)
 ap.add_argument("-i", "--index", required=True, help="Elasticsearch index pattern to query on. To use wildcard (*) put the index in quotes (e.g. \"my-indices*\")")
-ap.add_argument("-b", "--batch_size", required=False, help="batch size for the scroll API. Default to 5000. Max 10000")
-ap.add_argument("-o", "--scroll_timeout", required=False, help="scroll window timeout. Default to 4m")
-ap.add_argument("-th", "--threads", required=False, help="number of threads to run the script on. Default to max number of thread for the hosting machine")
-ap.add_argument("-im", "--ignore_multithreads", required=False, help="ignore the multithread options. Default to True. Set to False to exploit multiprocessing. If set to False a --time_field to sort on must be set or an exception will be raised")
+ap.add_argument("-b", "--batch_size", required=False, help="batch size for the scroll API. Default to 5000. Max 10000", type=int, default=5000)
+ap.add_argument("-o", "--scroll_timeout", required=False, help="scroll window timeout. Default to 4m", default='4m')
+ap.add_argument("-th", "--threads", required=False, help="number of threads to run the script on. Default to max number of thread for the hosting machine", type=int)
+ap.add_argument("-em", "--enable_multiprocessing", required=False, help="enable the multithread options. Default to False. Set to True to exploit multiprocessing. If set to True a --time_field to sort on must be set or an exception will be raised", type=bool, default=False)
 args = vars(ap.parse_args())
 ########## END SCRIPT ARGUMENTS AND OPTIONS ##########
+
+############ CHECK ARGUMENTS CONFLICTS ############
+MULTIPROCESSING_ENABLED = args['enable_multiprocessing']
+if (args['starting_date'] != None or args['ending_date'] != None) and args['time_field'] == None:
+  sys.exit("\nIf you set either a starting_date or an ending_date you have to set a --time_field to sort on, too.")
+
+if MULTIPROCESSING_ENABLED and args['time_field'] == None:
+  sys.exit("\nYou have to set a --time_field in order to use multiprocessing.")
+########## END CHECK ARGUMENTS CONFLICTS ##########
 
 ############ GLOBAL VARIABLES ############
 TOTAL_THREADS = min(multiprocessing.cpu_count(), safe_toint_cast(args['threads'])) if args['threads'] != None else multiprocessing.cpu_count()
 FIELDS_OF_INTEREST = args['fields'].split(',')
 FETCHED_DATA = [FIELDS_OF_INTEREST]
-EXPORT_PATH = args['export_path'] if args['export_path'] != None else '/home/fabio/Desktop/esToCSV/exports/testing_export.csv'
+EXPORT_PATH = args['export_path']
 
-if EXPORT_PATH[-4:] != '.csv':
-  raise('Specified path is not a valid csv file')
-elif os.path.exists(EXPORT_PATH):
+if os.path.exists(EXPORT_PATH):
   overwrite_file = ''
   while overwrite_file not in ['y', 'n']:
     overwrite_file = input("\nThere is already a csv file at the given path ({}). Do you want to overwrite it? (y/n)".format(EXPORT_PATH)).lower().strip()
@@ -69,9 +81,9 @@ if not overwrite_file:
 if args['es_query'] != None: # TODO check query is legit
   ES_QUERY = args['es_query']
 elif args['starting_date'] != None or args['ending_date'] != None:
-  TIME_FIELD = args['time_field'] if args['time_field'] != None else '@timestamp'
-  FROM_DATE = args['starting_date'] if args['starting_date'] != None else 'now-1000y'
-  TO_DATE = args['ending_date'] if args['ending_date'] != None else 'now+1000y'
+  TIME_FIELD = args['time_field']
+  FROM_DATE = args['starting_date']
+  TO_DATE = args['ending_date']
   ES_QUERY = '{"query":{"bool":{"must":[{"range":{"' + TIME_FIELD + '":{"gt":"' + FROM_DATE + '","lte":"' + TO_DATE + '"}}}]}}}'
 else:
   ES_QUERY = '{"query":{"match_all":{}}}'
@@ -81,12 +93,12 @@ TOTAL_HITS = 0
 
 ############ ES CONNECTION PARAMS ############
 
-FROM_USERNAME = args['user'] if args['user'] != None else ''
+FROM_USERNAME = args['user']
 FROM_PW = args['password'] if args['password'] != None else os.environ[args['secret_password']] if args['secret_password'] != None and args['secret_password'] in os.environ else ''
-FROM_SSL = args['ssl'] if args['ssl'] != None else False
-FROM_CERT_VERIFICATION = args['cert_verification'] if args['cert_verification'] != None else False
-FROM_HOST = args['host'] if args['host'] != None else 'localhost'
-FROM_PORT = safe_toint_cast(args['port'], 9200) if args['port'] != None else 9200
+FROM_SSL = args['ssl']
+FROM_CERT_VERIFICATION = args['cert_verification']
+FROM_HOST = args['host']
+FROM_PORT = args['port']
 
 FROM_ES = Elasticsearch( hosts=[{'host': FROM_HOST, 'port': FROM_PORT}],
                           connection_class=RequestsHttpConnection,
@@ -97,10 +109,10 @@ FROM_ES = Elasticsearch( hosts=[{'host': FROM_HOST, 'port': FROM_PORT}],
                           timeout=50 )
 
 FROM_INDEX = args['index']
-FROM_SCROLL_TIMEOUT = args['scroll_timeout'] if args['scroll_timeout'] != None else '4m'
+FROM_SCROLL_TIMEOUT = args['scroll_timeout']
 FROM_SOURCE = FIELDS_OF_INTEREST
 FROM_BODY = ES_QUERY
-FROM_BATCH_SIZE = safe_toint_cast(args['batch_size'], 5000) if args['batch_size'] != None else 5000
+FROM_BATCH_SIZE = args['batch_size']
 ################## END BLOCK ##################
 
 
