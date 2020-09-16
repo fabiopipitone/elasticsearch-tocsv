@@ -33,8 +33,8 @@ ap.add_argument("-f", "--fields", required=True, help="Elasticsearch fields, pas
 ap.add_argument("-e", "--export_path", required=False, help="path where to store the csv file. If not set, 'es_export.csv' will be used")
 ap.add_argument("-sd", "--starting_date", required=False, help="query starting date")
 ap.add_argument("-ed", "--ending_date", required=False, help="query ending date")
-ap.add_argument("-t", "--time_field", required=False, help="time field to query on. If not set and --starting_date or --ending_date are set, @timestamp will be used as time field")
-ap.add_argument("-q", "--es_query", required=False, help="Elasticsearch query. If set, --starting_date, --ending_date and --time_field will be ignored. Remember to use quotes and escape internal ones (e.g. ... -q \"{\\\"query\":{\\\"match_all\\\":{}}}\") ")
+ap.add_argument("-t", "--time_field", required=False, help="time field to query on. If not set and --starting_date or --ending_date are set and exception will be raised")
+ap.add_argument("-q", "--query_string", required=False, help="Elasticsearch query string. Put it between quotes and escape internal quotes characters (e.g. \"one_field: foo AND another_field.keyword: \\\"bar\\\"\"")
 ap.add_argument("-p", "--port", required=False, help="Elasticsearch port. If not set, the default port 9200 will be used")
 ap.add_argument("-u", "--user", required=False, help="Elasticsearch user")
 ap.add_argument("-pw", "--password", required=False, help="Elasticsearch password in clear. If set, the --secret_password will be ignored")
@@ -45,6 +45,7 @@ ap.add_argument("-i", "--index", required=True, help="Elasticsearch index patter
 ap.add_argument("-b", "--batch_size", required=False, help="batch size for the scroll API. Default to 5000. Max 10000")
 ap.add_argument("-o", "--scroll_timeout", required=False, help="scroll window timeout. Default to 4m")
 ap.add_argument("-th", "--threads", required=False, help="number of threads to run the script on. Default to max number of thread for the hosting machine")
+ap.add_argument("-im", "--ignore_multithreads", required=False, help="ignore the multithread options. Default to True. Set to False to exploit multiprocessing. If set to False a --time_field to sort on must be set or an exception will be raised")
 args = vars(ap.parse_args())
 ########## END SCRIPT ARGUMENTS AND OPTIONS ##########
 
