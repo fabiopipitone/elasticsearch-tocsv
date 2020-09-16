@@ -18,12 +18,6 @@ def obj_to_list(object, fields):
     list_of_values.append(object[field]) if field in object else list_of_values.append(None)
   return list_of_values
 
-def safe_toint_cast(string, rollback):
-  try: 
-    return int(string)
-  except:
-    return rollback
-
 def check_csv_valid_filename(filename):
   if filename[-4:] != '.csv':
     raise argparse.ArgumentTypeError("{} is not a valid path where to store the retrieved data. It must be a csv file".format(filename))
