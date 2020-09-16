@@ -1,7 +1,7 @@
 from elasticsearch import Elasticsearch
 from elasticsearch import RequestsHttpConnection
 from ssl import create_default_context
-import json, ast, code, copy, os, urllib3, hashlib, csv, sys, argparse
+import json, ast, code, copy, os, urllib3, hashlib, csv, sys, argparse, multiprocessing, requests
 from datetime import datetime, timedelta
 
 # Disable warning about not using an ssl certificate
@@ -44,10 +44,12 @@ ap.add_argument("-c", "--cert_verification", required=False, help="require ssl c
 ap.add_argument("-i", "--index", required=True, help="Elasticsearch index pattern to query on. To use wildcard (*) put the index in quotes (e.g. \"my-indices*\")")
 ap.add_argument("-b", "--batch_size", required=False, help="batch size for the scroll API. Default to 5000. Max 10000")
 ap.add_argument("-o", "--scroll_timeout", required=False, help="scroll window timeout. Default to 4m")
+ap.add_argument("-th", "--threads", required=False, help="number of threads to run the script on. Default to max number of thread for the hosting machine")
 args = vars(ap.parse_args())
 ########## END SCRIPT ARGUMENTS AND OPTIONS ##########
 
 ############ GLOBAL VARIABLES ############
+TOTAL_THREADS = min(multiprocessing.cpu_count(), safe_toint_cast(args['threads'])) if args['threads'] != None else multiprocessing.cpu_count()
 FIELDS_OF_INTEREST = args['fields'].split(',')
 FETCHED_DATA = [FIELDS_OF_INTEREST]
 EXPORT_PATH = args['export_path'] if args['export_path'] != None else '/home/fabio/Desktop/esToCSV/exports/testing_export.csv'
