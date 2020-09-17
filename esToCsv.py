@@ -1,8 +1,10 @@
 from elasticsearch import Elasticsearch
 from elasticsearch import RequestsHttpConnection
 from ssl import create_default_context
-import json, ast, code, copy, os, urllib3, hashlib, csv, sys, argparse, multiprocessing, requests
+from concurrent.futures import ThreadPoolExecutor
+import json, ast, code, copy, os, urllib3, hashlib, csv, sys, argparse, multiprocessing, requests, logging
 from datetime import datetime, timedelta
+import dateutil.parser as dateparser
 
 # Disable warning about not using an ssl certificate
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -19,13 +21,13 @@ def check_csv_valid_filename(filename):
     raise argparse.ArgumentTypeError("{} is not a valid path where to store the retrieved data. It must be a csv file".format(filename))
   return filename
 
-def fetch_arguments():
+def fetch_arguments(): # TODO add function to check dates in iso8601 format
   ap = argparse.ArgumentParser()
   ap.add_argument("-ho", "--host", required=False, help="Elasticsearch host. If not set, localhost will be used", default="localhost")
   ap.add_argument("-f", "--fields", required=True, help="Elasticsearch fields, passed as a string with commas between fields and no whitespaces (e.g. \"field1,field2\")")
   ap.add_argument("-e", "--export_path", required=False, help="path where to store the csv file. If not set, 'es_export.csv' will be used", type=check_csv_valid_filename, default="es_export.csv")
-  ap.add_argument("-sd", "--starting_date", required=False, help="query starting date")
-  ap.add_argument("-ed", "--ending_date", required=False, help="query ending date")
+  ap.add_argument("-sd", "--starting_date", required=False, help="query starting date", default='now-1000y') # TODO force iso format
+  ap.add_argument("-ed", "--ending_date", required=False, help="query ending date", default='now+1000y') # TODO force iso format
   ap.add_argument("-t", "--time_field", required=False, help="time field to query on. If not set and --starting_date or --ending_date are set and exception will be raised")
   ap.add_argument("-q", "--query_string", required=False, help="Elasticsearch query string. Put it between quotes and escape internal quotes characters (e.g. \"one_field: foo AND another_field.keyword: \\\"bar\\\"\"", default="*")
   ap.add_argument("-p", "--port", required=False, help="Elasticsearch port. If not set, the default port 9200 will be used", default=9200, type=int)
@@ -42,7 +44,7 @@ def fetch_arguments():
   return vars(ap.parse_args())
 
 def check_arguments_conflicts(args):
-  if (args['starting_date'] != None or args['ending_date'] != None) and args['time_field'] == None:
+  if (args['starting_date'] != 'now-1000y' or args['ending_date'] != 'now+1000y') and args['time_field'] == None:
     sys.exit("\nIf you set either a starting_date or an ending_date you have to set a --time_field to sort on, too.")
   
   if args['enable_multiprocessing'] and args['time_field'] == None:
@@ -54,22 +56,23 @@ def check_csv_already_written(filename):
   if os.path.exists(filename):
     overwrite_file = ''
     while overwrite_file not in ['y', 'n']:
-      overwrite_file = input("\nThere is already a csv file at the given path ({}). Do you want to overwrite it? (y/n)".format(EXPORT_PATH)).lower().strip()
+      overwrite_file = input("\nThere is already a csv file at the given path ({}). Do you want to overwrite it? (y/n)".format(filename)).lower().strip()
     if overwrite_file == 'n':
       sys.exit("\nExiting script not to overwrite the file. No query has been run.")
   return filename
 
-def build_es_query(args, starting_date, ending_date):
+def build_es_query(args, starting_date, ending_date, order='asc', size=None):
   QUERY_STRING = args['query_string'] #TODO chech how to properly escape internal quotes
+  SIZE = ('"size": ' + str(size) + ',') if size != None else ''
   if args['time_field'] != None:
     TIME_FIELD = args['time_field']
     FROM_DATE = starting_date if starting_date != None else "now-1000y"
     TO_DATE = ending_date if ending_date != None else "now+1000y"
-    SORT_QUERY = '"sort":[{"' + TIME_FIELD + '":{"order":"asc"}}],'
+    SORT_QUERY = '"sort":[{"' + TIME_FIELD + '":{"order":"' + order + '"}}],'
     RANGE_QUERY = ",{\"range\":{\"" + TIME_FIELD + "\":{\"gte\":\"" + FROM_DATE + "\",\"lte\":\"" + TO_DATE + "\"}}}"
   else:
     SORT_QUERY = RANGE_QUERY = ''
-  ES_QUERY = '{' + SORT_QUERY + '"query":{"bool":{"must":[{"query_string":{"query":"' + QUERY_STRING + '"}}' + RANGE_QUERY + ']}}}'
+  ES_QUERY = '{' + SIZE + SORT_QUERY + '"query":{"bool":{"must":[{"query_string":{"query":"' + QUERY_STRING + '"}}' + RANGE_QUERY + ']}}}'
   return ES_QUERY
 
 def build_es_connection(args):
@@ -82,13 +85,14 @@ def build_es_connection(args):
                           retry_on_timeout=True,
                           timeout=50 )
 
-def fetch_es_data(args):
+def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
+  print("\nThread {}: starts fetching data from {} to {}".format(thread_name, starting_date, ending_date))
   ES_INSTANCE = build_es_connection(args)
   ES_INDEX = args['index']
   SCROLL_TIMEOUT = args['scroll_timeout']
   BATCH_SIZE = args['batch_size']
   FIELDS_OF_INTEREST = args['fields'].split(',')
-  ES_QUERY = build_es_query(args, args['starting_date'], args['ending_date'])
+  ES_QUERY = build_es_query(args, starting_date, ending_date)
 
   total_hits = 0
   fetched_data = [FIELDS_OF_INTEREST]
@@ -102,7 +106,7 @@ def fetch_es_data(args):
       body = ES_QUERY
     )
   except Exception as e:
-    print("\nSomething went wrong when fetching the data from Elasticsearch. Please check your connection parameters. Here's the raised exception: \n\n{}".format(e))
+    print("\nThread {}: something went wrong when fetching the data from Elasticsearch. Please check your connection parameters. Here's the raised exception: \n\n{}".format(thread_name, e))
   
   # Save parameters for scrolling
   sid = es_data['_scroll_id']
@@ -116,7 +120,7 @@ def fetch_es_data(args):
 
   # Scroll and add hits to the fetched_data list
   while scroll_size > 0:
-    print('\rScrolling...(page {})'.format(page_counter), end = '')
+    print('\rThread {}: Scrolling...(page {})'.format(thread_name, page_counter), end = '')
     es_data = ES_INSTANCE.scroll(scroll_id=sid, scroll=SCROLL_TIMEOUT)
     # Process current batch of hits
     for hit in es_data['hits']['hits']:
@@ -128,7 +132,35 @@ def fetch_es_data(args):
     scroll_size = len(es_data['hits']['hits'])
     page_counter += 1
 
-  return fetched_data  
+  print("\nThread {}: {} documents have been fetched.".format(thread_name, total_hits))
+  return fetched_data 
+
+def get_actual_dates(args, starting_date, ending_date):
+  headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
+  search_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_search"
+  if starting_date == 'now-1000y':
+    sdate_query = build_es_query(args, starting_date, ending_date, 'asc', 1)
+    r = requests.get(search_url, data=sdate_query, headers=headers).json()
+    starting_date = r['hits']['hits'][0]['_source'][args['time_field']]
+  if ending_date == 'now+1000y':
+    edate_query = build_es_query(args, starting_date, ending_date, 'desc', 1)
+    r = requests.get(search_url, data=edate_query, headers=headers).json()
+    ending_date = r['hits']['hits'][0]['_source'][args['time_field']]
+  return [starting_date, ending_date]
+
+def make_time_intervals(args, threads, starting_date, ending_date):
+  starting_date, ending_date = get_actual_dates(args, starting_date, ending_date)
+  sdate_in_seconds = dateparser.parse(starting_date).timestamp()
+  edate_in_seconds = dateparser.parse(ending_date).timestamp()
+  interval_in_seconds = (edate_in_seconds - sdate_in_seconds) / threads
+  dates_for_threads = [[], []]
+  for thread in range(0, threads):
+    sdate = datetime.fromtimestamp(sdate_in_seconds + thread*interval_in_seconds).isoformat()
+    edate = datetime.fromtimestamp(sdate_in_seconds + (thread + 1)*interval_in_seconds).isoformat()
+    dates_for_threads[0].append(sdate)
+    dates_for_threads[1].append(edate)
+  dates_for_threads[1][-1] = datetime.fromtimestamp(edate_in_seconds).isoformat()
+  return dates_for_threads
 
 def main():
   args = fetch_arguments()
@@ -138,20 +170,29 @@ def main():
 
   EXPORT_PATH = check_csv_already_written(args['export_path'])
 
-  # ES_INSTANCE = build_es_connection(args)
-  # ES_INDEX = args['index']
-  # SCROLL_TIMEOUT = args['scroll_timeout']
-  # BATCH_SIZE = args['batch_size']
-  # FIELDS_OF_INTEREST = args['fields'].split(',')
-  # ES_QUERY = build_es_query(args)
-
   if args['enable_multiprocessing']:
-    # Do the multithread code
-    TOTAL_THREADS = min(multiprocessing.cpu_count(), safe_toint_cast(args['threads'])) if args['threads'] != None else multiprocessing.cpu_count()
     print('MULTITHREAD PROCESSING\n')
+    threads_to_use = min(multiprocessing.cpu_count(), safe_toint_cast(args['threads'])) if args['threads'] != None else multiprocessing.cpu_count()
+    lists_to_join = [[] for i in range(threads_to_use)]
+    
+    # Split total time range in equals time intervals so to let each thread work on a partial set of data and store the resulting list as a sublist of the lists_to_join list
+    threads_intervals = make_time_intervals(args, threads_to_use, args['starting_date'], args['ending_date'])
+
+    # Build the list of arguments to pass to the function each thread will run
+    thread_function_arguments = [[args for i in range(threads_to_use)], *threads_intervals, [i for i in range(threads_to_use)]]
+    
+    # Create and start threads_to_use number of threads
+    with ThreadPoolExecutor(threads_to_use) as executor:
+      [*lists_to_join] = executor.map(fetch_es_data, *thread_function_arguments)
+
+    # Create the final list, concatenating the partial sublists resulting from the threads processing and removing each first element of each sublist starting from the second one since it would be equal to the final element of the previous sublist (range in es query use the gte and lte operators)
+    list_to_write = lists_to_join.pop(0)
+    for fetched_partial_list in lists_to_join:
+      fetched_partial_list.pop(0)
+      list_to_write += fetched_partial_list
   else:
     print('SINGLE THREAD PROCESSING\n')
-    list_to_write = fetch_es_data(args)
+    list_to_write = fetch_es_data(args, args['starting_date'], args['ending_date'])
   
   print('\nWriting the csv file...')
   with open(EXPORT_PATH, 'w', newline='') as csvfile:
