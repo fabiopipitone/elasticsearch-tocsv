@@ -2,7 +2,7 @@ from elasticsearch import Elasticsearch
 from elasticsearch import RequestsHttpConnection
 from ssl import create_default_context
 from concurrent.futures import ThreadPoolExecutor
-import json, ast, code, copy, os, urllib3, hashlib, csv, sys, argparse, multiprocessing, requests, logging
+import json, ast, code, copy, os, urllib3, hashlib, csv, sys, argparse, multiprocessing, requests, logging, math, threading, time
 from datetime import datetime, timedelta
 import dateutil.parser as dateparser
 
@@ -20,6 +20,32 @@ def check_csv_valid_filename(filename):
   if filename[-4:] != '.csv':
     raise argparse.ArgumentTypeError("{} is not a valid path where to store the retrieved data. It must be a csv file".format(filename))
   return filename
+
+def threads_finished():
+  global threads_totals
+  if threads_totals[0] != '100%':
+    return False
+  iterator = iter(threads_totals)
+  try:
+    first = next(iterator)
+  except StopIteration:
+    return True
+  return all(first == rest for rest in iterator)
+    
+
+def thread_printer():
+  global threads_totals
+  time.sleep(1)
+  while not threads_finished():
+    time.sleep(0.5)
+    status_bars = "[ "
+    if len(threads_totals) == 1:
+      status_bars += "Thread Main --> {}".format(threads_totals[0]) + " ]"
+    else:
+      for index, thread in enumerate(threads_totals):
+        filler = " ]" if index == (len(threads_totals) - 1) else "  /  "
+        status_bars += "Thread {} --> {}".format(index, threads_totals[index]) + filler
+    print("\r" + status_bars, end='')
 
 def fetch_arguments(): # TODO add function to check dates in iso8601 format
   ap = argparse.ArgumentParser()
@@ -61,14 +87,14 @@ def check_csv_already_written(filename):
       sys.exit("\nExiting script not to overwrite the file. No query has been run.")
   return filename
 
-def build_es_query(args, starting_date, ending_date, order='asc', size=None):
+def build_es_query(args, starting_date, ending_date, order='asc', size=None, count_query=False):
   QUERY_STRING = args['query_string'] #TODO chech how to properly escape internal quotes
   SIZE = ('"size": ' + str(size) + ',') if size != None else ''
   if args['time_field'] != None:
     TIME_FIELD = args['time_field']
     FROM_DATE = starting_date if starting_date != None else "now-1000y"
     TO_DATE = ending_date if ending_date != None else "now+1000y"
-    SORT_QUERY = '"sort":[{"' + TIME_FIELD + '":{"order":"' + order + '"}}],'
+    SORT_QUERY = '"sort":[{"' + TIME_FIELD + '":{"order":"' + order + '"}}],' if not count_query else ''
     RANGE_QUERY = ",{\"range\":{\"" + TIME_FIELD + "\":{\"gte\":\"" + FROM_DATE + "\",\"lte\":\"" + TO_DATE + "\"}}}"
   else:
     SORT_QUERY = RANGE_QUERY = ''
@@ -85,16 +111,27 @@ def build_es_connection(args):
                           retry_on_timeout=True,
                           timeout=50 )
 
+def update_percentage(thread_name, processed_docs, total_hits):
+  global threads_totals
+  threads_totals_position = 0 if thread_name == 'Main' else thread_name
+  partial_percentage = str(math.floor(processed_docs*100/total_hits)) + "%"
+  threads_totals[threads_totals_position] = partial_percentage
+
 def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
-  print("\nThread {}: starts fetching data from {} to {}".format(thread_name, starting_date, ending_date))
+  logging.info("Thread {}: starts fetching data from {} to {}".format(thread_name, starting_date, ending_date))
   ES_INSTANCE = build_es_connection(args)
   ES_INDEX = args['index']
   SCROLL_TIMEOUT = args['scroll_timeout']
   BATCH_SIZE = args['batch_size']
   FIELDS_OF_INTEREST = args['fields'].split(',')
   ES_QUERY = build_es_query(args, starting_date, ending_date)
+  ES_COUNT_QUERY = build_es_query(args, starting_date, ending_date, count_query=True)
 
-  total_hits = 0
+  headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
+  count_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
+  total_hits = requests.get(count_url, data=ES_COUNT_QUERY, headers=headers).json()['count']
+  
+  processed_docs = 0
   fetched_data = [FIELDS_OF_INTEREST]
 
   try:
@@ -106,7 +143,7 @@ def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
       body = ES_QUERY
     )
   except Exception as e:
-    print("\nThread {}: something went wrong when fetching the data from Elasticsearch. Please check your connection parameters. Here's the raised exception: \n\n{}".format(thread_name, e))
+    logging.critical("\nThread {}: something went wrong when fetching the data from Elasticsearch. Please check your connection parameters. Here's the raised exception: \n\n{}".format(thread_name, e))
   
   # Save parameters for scrolling
   sid = es_data['_scroll_id']
@@ -115,24 +152,25 @@ def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
 
   # Process current batch of hits before starting to scroll
   for hit in es_data['hits']['hits']:
-    total_hits += 1
+    processed_docs += 1
     fetched_data.append(obj_to_list(hit['_source'], FIELDS_OF_INTEREST))
 
   # Scroll and add hits to the fetched_data list
   while scroll_size > 0:
-    print('\rThread {}: Scrolling...(page {})'.format(thread_name, page_counter), end = '')
+    #print('\rThread {}: Scrolling...(page {})\n'.format(thread_name, page_counter), end = '')
     es_data = ES_INSTANCE.scroll(scroll_id=sid, scroll=SCROLL_TIMEOUT)
     # Process current batch of hits
     for hit in es_data['hits']['hits']:
-      total_hits += 1
+      processed_docs += 1
       fetched_data.append(obj_to_list(hit['_source'], FIELDS_OF_INTEREST))
+      update_percentage(thread_name, processed_docs, total_hits)
     # Update the scroll ID
     sid = es_data['_scroll_id']
     # Get the number of results that returned in the last scroll
     scroll_size = len(es_data['hits']['hits'])
     page_counter += 1
 
-  print("\nThread {}: {} documents have been fetched.".format(thread_name, total_hits))
+  # logging.info("\nThread {}: {} documents have been fetched.".format(thread_name, processed_docs))
   return fetched_data 
 
 def get_actual_dates(args, starting_date, ending_date):
@@ -163,17 +201,22 @@ def make_time_intervals(args, threads, starting_date, ending_date):
   return dates_for_threads
 
 def main():
+  global threads_totals
   args = fetch_arguments()
   check_arguments_conflicts(args)
 
-  print('################ LAUNCHING THE WEB SCRIPT -- DATETIME {} ################\n'.format(datetime.now().strftime('%d/%m/%Y_%H:%M:%S')))
+  logging.info("################ LAUNCHING THE WEB SCRIPT ################\n")
 
   EXPORT_PATH = check_csv_already_written(args['export_path'])
 
   if args['enable_multiprocessing']:
-    print('MULTITHREAD PROCESSING\n')
+    logging.info('MULTITHREAD PROCESSING\n')
     threads_to_use = min(multiprocessing.cpu_count(), safe_toint_cast(args['threads'])) if args['threads'] != None else multiprocessing.cpu_count()
+    threads_totals = (['0%' for i in range(threads_to_use)])
     lists_to_join = [[] for i in range(threads_to_use)]
+    
+    printing_thread = threading.Thread(target=thread_printer)
+    printing_thread.start()
     
     # Split total time range in equals time intervals so to let each thread work on a partial set of data and store the resulting list as a sublist of the lists_to_join list
     threads_intervals = make_time_intervals(args, threads_to_use, args['starting_date'], args['ending_date'])
@@ -185,21 +228,36 @@ def main():
     with ThreadPoolExecutor(threads_to_use) as executor:
       [*lists_to_join] = executor.map(fetch_es_data, *thread_function_arguments)
 
+    printing_thread.join()
     # Create the final list, concatenating the partial sublists resulting from the threads processing and removing each first element of each sublist starting from the second one since it would be equal to the final element of the previous sublist (range in es query use the gte and lte operators)
     list_to_write = lists_to_join.pop(0)
     for fetched_partial_list in lists_to_join:
       fetched_partial_list.pop(0)
       list_to_write += fetched_partial_list
   else:
-    print('SINGLE THREAD PROCESSING\n')
+    logging.info('SINGLE THREAD PROCESSING\n')
+    threads_totals = ['0%']
+    printing_thread = threading.Thread(target=thread_printer)
+    printing_thread.start()
+    
     list_to_write = fetch_es_data(args, args['starting_date'], args['ending_date'])
+    printing_thread.join()
   
-  print('\nWriting the csv file...')
+  logging.info('\nWriting the csv file...')
   with open(EXPORT_PATH, 'w', newline='') as csvfile:
     writer = csv.writer(csvfile)
     writer.writerows(list_to_write)
 
 
 if __name__ == "__main__":
+  format = "%(asctime)s -- %(message)s"
+  logging.getLogger("requests").setLevel(logging.WARNING)
+  logging.getLogger("urllib3").setLevel(logging.WARNING)
+  logging.getLogger("concurrent").setLevel(logging.WARNING)
+  logging.getLogger("asyncio").setLevel(logging.WARNING)
+  logging.getLogger("elasticsearch").setLevel(logging.WARNING)
+  logging.basicConfig(format=format, level=logging.INFO, datefmt="[%Y-%m-%dT%H:%M:%S]")
+
+  threads_totals = []
   main()
 
