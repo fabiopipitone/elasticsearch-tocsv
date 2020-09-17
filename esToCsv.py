@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import json, ast, code, copy, os, urllib3, hashlib, csv, sys, argparse, multiprocessing, requests, logging, math, threading, time
 from datetime import datetime, timedelta
 import dateutil.parser as dateparser
+from requests.auth import HTTPBasicAuth
 
 # Disable warning about not using an ssl certificate
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -129,7 +130,7 @@ def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
 
   headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
   count_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
-  total_hits = requests.get(count_url, data=ES_COUNT_QUERY, headers=headers).json()['count']
+  total_hits = requests.get(count_url, data=ES_COUNT_QUERY, headers=headers, auth=HTTPBasicAuth(args['user'], args['password'])).json()['count']
   
   processed_docs = 0
   fetched_data = [FIELDS_OF_INTEREST]
@@ -178,11 +179,11 @@ def get_actual_dates(args, starting_date, ending_date):
   search_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_search"
   if starting_date == 'now-1000y':
     sdate_query = build_es_query(args, starting_date, ending_date, 'asc', 1)
-    r = requests.get(search_url, data=sdate_query, headers=headers).json()
+    r = requests.get(search_url, data=sdate_query, headers=headers, auth=HTTPBasicAuth(args['user'], args['password'])).json()
     starting_date = r['hits']['hits'][0]['_source'][args['time_field']]
   if ending_date == 'now+1000y':
     edate_query = build_es_query(args, starting_date, ending_date, 'desc', 1)
-    r = requests.get(search_url, data=edate_query, headers=headers).json()
+    r = requests.get(search_url, data=edate_query, headers=headers, auth=HTTPBasicAuth(args['user'], args['password'])).json()
     ending_date = r['hits']['hits'][0]['_source'][args['time_field']]
   return [starting_date, ending_date]
 
