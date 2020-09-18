@@ -22,6 +22,14 @@ def check_csv_valid_filename(filename):
     raise argparse.ArgumentTypeError("{} is not a valid path where to store the retrieved data. It must be a csv file".format(filename))
   return filename
 
+def check_valid_date(date_string):
+  if date_string != "now-1000y" or date_string != "now+1000y":
+    try:
+      dateparser.parse(date_string)
+    except:
+      sys.exit("\nThe date set ({}) is not valid".format(date_string))
+  return True
+
 def threads_finished():
   global threads_totals
   if threads_totals[0] != '100%':
@@ -57,13 +65,13 @@ def request_to_es(url, query, user='', pwd='', timeout=10):
     os._exit(os.EX_OK)
   return r
 
-def fetch_arguments(): # TODO add function to check dates in iso8601 format
+def fetch_arguments():
   ap = argparse.ArgumentParser()
   ap.add_argument("-ho", "--host", required=False, help="Elasticsearch host. If not set, localhost will be used", default="localhost")
   ap.add_argument("-f", "--fields", required=True, help="Elasticsearch fields, passed as a string with commas between fields and no whitespaces (e.g. \"field1,field2\")")
   ap.add_argument("-e", "--export_path", required=False, help="path where to store the csv file. If not set, 'es_export.csv' will be used", type=check_csv_valid_filename, default="es_export.csv")
-  ap.add_argument("-sd", "--starting_date", required=False, help="query starting date", default='now-1000y') # TODO force iso format
-  ap.add_argument("-ed", "--ending_date", required=False, help="query ending date", default='now+1000y') # TODO force iso format
+  ap.add_argument("-sd", "--starting_date", required=False, help="query starting date. Must be set in iso 8601 format, with or without the timezone (e.g. \"YYYY-MM-ddTHH:mm:ss\" or \"YYYY-MM-ddTHH:mm:ss+01:00\")", default='now-1000y')
+  ap.add_argument("-ed", "--ending_date", required=False, help="query ending date. Must be set in iso 8601 format, with or without the timezone (e.g. \"YYYY-MM-ddTHH:mm:ss\" or \"YYYY-MM-ddTHH:mm:ss+01:00\")", default='now+1000y')
   ap.add_argument("-t", "--time_field", required=False, help="time field to query on. If not set and --starting_date or --ending_date are set and exception will be raised")
   ap.add_argument("-q", "--query_string", required=False, help="Elasticsearch query string. Put it between quotes and escape internal quotes characters (e.g. \"one_field: foo AND another_field.keyword: \\\"bar\\\"\"", default="*")
   ap.add_argument("-p", "--port", required=False, help="Elasticsearch port. If not set, the default port 9200 will be used", default=9200, type=int)
@@ -85,6 +93,9 @@ def check_arguments_conflicts(args):
   
   if args['enable_multiprocessing'] and args['time_field'] == None:
     sys.exit("\nYou have to set a --time_field in order to use multiprocessing.")
+
+  check_valid_date(args['starting_date'])
+  check_valid_date(args['ending_date'])
   
   return True
 
