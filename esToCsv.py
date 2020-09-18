@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import dateutil.parser as dateparser
 from requests.auth import HTTPBasicAuth
 from tqdm import *
+import getpass
 
 # Disable warning about not using an ssl certificate
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -65,8 +66,8 @@ def fetch_arguments():
   ap.add_argument("-q", "--query_string", required=False, help="Elasticsearch query string. Put it between quotes and escape internal quotes characters (e.g. \"one_field: foo AND another_field.keyword: \\\"bar\\\"\"", default="*")
   ap.add_argument("-p", "--port", required=False, help="Elasticsearch port. If not set, the default port 9200 will be used", default=9200, type=int)
   ap.add_argument("-u", "--user", required=False, help="Elasticsearch user", default='')
-  ap.add_argument("-pw", "--password", required=False, help="Elasticsearch password in clear. If set, the --secret_password will be ignored")
-  ap.add_argument("-spw", "--secret_password", required=False, help="env var pointing the Elasticsearch password")
+  ap.add_argument("-pw", "--password", required=False, help="Elasticsearch password in clear. If set, the --secret_password will be ignored. If both this a --secret_password are not set, a prompt password will be asked anyway (leave it blank if not needed).")
+  ap.add_argument("-spw", "--secret_password", required=False, help="env var pointing the Elasticsearch password. If both this a --password are not set, a prompt password will be asked anyway (leave it blank if not needed).")
   ap.add_argument("-s", "--ssl", required=False, help="require ssl connection. Default to False. Set to True to enable it", type=bool, default=False)
   ap.add_argument("-c", "--cert_verification", required=False, help="require ssl certificate verification. Default to False. Set to True to enable it", type=bool, default=False)
   ap.add_argument("-i", "--index", required=True, help="Elasticsearch index pattern to query on. To use wildcard (*) put the index in quotes (e.g. \"my-indices*\")")
@@ -87,6 +88,12 @@ def check_arguments_conflicts(args):
   check_valid_date(args['ending_date'])
   
   return True
+
+def final_pw(args):
+  pw = args['password'] if args['password'] != None else os.environ[args['secret_password']] if args['secret_password'] != None and args['secret_password'] in os.environ else ''
+  if pw == '':
+    pw = getpass.getpass("Enter your es instance password. If not needed, press ENTER:  ")
+  args['password'] = pw
 
 def check_csv_already_written(filename):
   if os.path.exists(filename):
@@ -112,10 +119,9 @@ def build_es_query(args, starting_date, ending_date, order='asc', size=None, cou
   return ES_QUERY
 
 def build_es_connection(args):
-  ES_PW = args['password'] if args['password'] != None else os.environ[args['secret_password']] if args['secret_password'] != None and args['secret_password'] in os.environ else ''
   return Elasticsearch( hosts=[{'host': args['host'], 'port': args['port']}],
                           connection_class=RequestsHttpConnection,
-                          http_auth=(args['user'], ES_PW),
+                          http_auth=(args['user'], args['password']),
                           use_ssl=args['ssl'],
                           verify_certs=args['cert_verification'],
                           retry_on_timeout=True,
@@ -127,7 +133,6 @@ def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
   log.info("Thread {}: starts fetching data from {} to {}".format(thread_name, starting_date, ending_date))
   ES_INSTANCE = build_es_connection(args)
   ES_INDEX = args['index']
-  ES_PW = args['password'] if args['password'] != None else os.environ[args['secret_password']] if args['secret_password'] != None and args['secret_password'] in os.environ else ''
   SCROLL_TIMEOUT = args['scroll_timeout']
   BATCH_SIZE = args['batch_size']
   FIELDS_OF_INTEREST = args['fields'].split(',')
@@ -135,7 +140,7 @@ def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
   ES_COUNT_QUERY = build_es_query(args, starting_date, ending_date, count_query=True)
 
   count_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
-  total_hits = request_to_es(count_url, ES_COUNT_QUERY, args['user'], ES_PW)['count']
+  total_hits = request_to_es(count_url, ES_COUNT_QUERY, args['user'], args['password'])['count']
   pbar = tqdm(total=total_hits, position=thread_number, desc="Thread {}".format(thread_number), ncols=100)
   
   processed_docs = 0
@@ -182,14 +187,13 @@ def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
 
 def get_actual_dates(args, starting_date, ending_date):
   search_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_search"
-  ES_PW = args['password'] if args['password'] != None else os.environ[args['secret_password']] if args['secret_password'] != None and args['secret_password'] in os.environ else ''
   if starting_date == 'now-1000y':
     sdate_query = build_es_query(args, starting_date, ending_date, 'asc', 1)
-    r = request_to_es(search_url, sdate_query, args['user'], ES_PW)
+    r = request_to_es(search_url, sdate_query, args['user'], args['password'])
     starting_date = r['hits']['hits'][0]['_source'][args['time_field']]
   if ending_date == 'now+1000y':
     edate_query = build_es_query(args, starting_date, ending_date, 'desc', 1)
-    r = request_to_es(search_url, edate_query, args['user'], ES_PW)
+    r = request_to_es(search_url, edate_query, args['user'], args['password'])
     ending_date = r['hits']['hits'][0]['_source'][args['time_field']]
   return [starting_date, ending_date]
 
@@ -209,6 +213,7 @@ def make_time_intervals(args, threads, starting_date, ending_date):
 
 def main():
   args = fetch_arguments()
+  final_pw(args)
   check_arguments_conflicts(args)
 
   log.info("################ LAUNCHING THE ES_TO_CSV SCRIPT ################\n")
