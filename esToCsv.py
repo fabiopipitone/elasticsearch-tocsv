@@ -48,6 +48,15 @@ def thread_printer():
         status_bars += "Thread {} --> {}".format(index, threads_totals[index]) + filler
     print("\r" + status_bars, end='')
 
+def request_to_es(url, query, user='', pwd='', timeout=10):
+  headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
+  try:
+    r = requests.get(url, data=query, headers=headers, auth=HTTPBasicAuth(user, pwd), timeout=10).json()
+  except Exception as e:
+    logging.error("\n\nSomething when wrong connecting to the ES instance. Check out the raised exception: \n\n{}".format(e))
+    os._exit(os.EX_OK)
+  return r
+
 def fetch_arguments(): # TODO add function to check dates in iso8601 format
   ap = argparse.ArgumentParser()
   ap.add_argument("-ho", "--host", required=False, help="Elasticsearch host. If not set, localhost will be used", default="localhost")
@@ -129,9 +138,10 @@ def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
   ES_QUERY = build_es_query(args, starting_date, ending_date)
   ES_COUNT_QUERY = build_es_query(args, starting_date, ending_date, count_query=True)
 
-  headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
+  # headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
   count_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
-  total_hits = requests.get(count_url, data=ES_COUNT_QUERY, headers=headers, auth=HTTPBasicAuth(args['user'], ES_PW)).json()['count']
+  # total_hits = requests.get(count_url, data=ES_COUNT_QUERY, headers=headers, auth=HTTPBasicAuth(args['user'], ES_PW), timeout=10).json()['count']
+  total_hits = request_to_es(count_url, ES_COUNT_QUERY, args['user'], ES_PW)['count']
   
   processed_docs = 0
   fetched_data = [FIELDS_OF_INTEREST]
@@ -176,16 +186,18 @@ def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
   return fetched_data 
 
 def get_actual_dates(args, starting_date, ending_date):
-  headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
+  # headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
   search_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_search"
   ES_PW = args['password'] if args['password'] != None else os.environ[args['secret_password']] if args['secret_password'] != None and args['secret_password'] in os.environ else ''
   if starting_date == 'now-1000y':
     sdate_query = build_es_query(args, starting_date, ending_date, 'asc', 1)
-    r = requests.get(search_url, data=sdate_query, headers=headers, auth=HTTPBasicAuth(args['user'], ES_PW)).json()
+    # r = requests.get(search_url, data=sdate_query, headers=headers, auth=HTTPBasicAuth(args['user'], ES_PW), timeout=10).json()
+    r = request_to_es(search_url, sdate_query, args['user'], ES_PW)
     starting_date = r['hits']['hits'][0]['_source'][args['time_field']]
   if ending_date == 'now+1000y':
     edate_query = build_es_query(args, starting_date, ending_date, 'desc', 1)
-    r = requests.get(search_url, data=edate_query, headers=headers, auth=HTTPBasicAuth(args['user'], ES_PW)).json()
+    # r = requests.get(search_url, data=edate_query, headers=headers, auth=HTTPBasicAuth(args['user'], ES_PW), timeout=10).json()
+    r = request_to_es(search_url, edate_query, args['user'], ES_PW)
     ending_date = r['hits']['hits'][0]['_source'][args['time_field']]
   return [starting_date, ending_date]
 
