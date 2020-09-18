@@ -6,9 +6,24 @@ import json, ast, code, copy, os, urllib3, hashlib, csv, sys, argparse, multipro
 from datetime import datetime, timedelta
 import dateutil.parser as dateparser
 from requests.auth import HTTPBasicAuth
+from tqdm import *
 
 # Disable warning about not using an ssl certificate
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+class TqdmLoggingHandler(logging.Handler):
+  def __init__(self, level=logging.NOTSET):
+    super().__init__(level)
+
+  def emit(self, record):
+    try:
+      msg = self.format(record)
+      tqdm.write(msg)
+      self.flush()
+    except (KeyboardInterrupt, SystemExit):
+      raise
+    except:
+      self.handleError(record)
 
 ############ UTILITY FUNCTIONS ############
 def obj_to_list(object, fields):
@@ -23,38 +38,12 @@ def check_csv_valid_filename(filename):
   return filename
 
 def check_valid_date(date_string):
-  if date_string != "now-1000y" or date_string != "now+1000y":
+  if (date_string != "now-1000y" and date_string != "now+1000y"):
     try:
       dateparser.parse(date_string)
     except:
       sys.exit("\nThe date set ({}) is not valid".format(date_string))
   return True
-
-def threads_finished():
-  global threads_totals
-  if threads_totals[0] != '100%':
-    return False
-  iterator = iter(threads_totals)
-  try:
-    first = next(iterator)
-  except StopIteration:
-    return True
-  return all(first == rest for rest in iterator)
-    
-
-def thread_printer():
-  global threads_totals
-  time.sleep(1)
-  while not threads_finished():
-    time.sleep(0.5)
-    status_bars = "[ "
-    if len(threads_totals) == 1:
-      status_bars += "Thread Main --> {}".format(threads_totals[0]) + " ]"
-    else:
-      for index, thread in enumerate(threads_totals):
-        filler = " ]" if index == (len(threads_totals) - 1) else "  /  "
-        status_bars += "Thread {} --> {}".format(index, threads_totals[index]) + filler
-    print("\r" + status_bars, end='')
 
 def request_to_es(url, query, user='', pwd='', timeout=10):
   headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
@@ -132,14 +121,10 @@ def build_es_connection(args):
                           retry_on_timeout=True,
                           timeout=50 )
 
-def update_percentage(thread_name, processed_docs, total_hits):
-  global threads_totals
-  threads_totals_position = 0 if thread_name == 'Main' else thread_name
-  partial_percentage = str(math.floor(processed_docs*100/total_hits)) + "%"
-  threads_totals[threads_totals_position] = partial_percentage
-
 def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
-  logging.info("Thread {}: starts fetching data from {} to {}".format(thread_name, starting_date, ending_date))
+  global pbars
+  thread_number = 0 if thread_name == 'Main' else thread_name
+  log.info("Thread {}: starts fetching data from {} to {}".format(thread_name, starting_date, ending_date))
   ES_INSTANCE = build_es_connection(args)
   ES_INDEX = args['index']
   ES_PW = args['password'] if args['password'] != None else os.environ[args['secret_password']] if args['secret_password'] != None and args['secret_password'] in os.environ else ''
@@ -149,10 +134,9 @@ def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
   ES_QUERY = build_es_query(args, starting_date, ending_date)
   ES_COUNT_QUERY = build_es_query(args, starting_date, ending_date, count_query=True)
 
-  # headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
   count_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
-  # total_hits = requests.get(count_url, data=ES_COUNT_QUERY, headers=headers, auth=HTTPBasicAuth(args['user'], ES_PW), timeout=10).json()['count']
   total_hits = request_to_es(count_url, ES_COUNT_QUERY, args['user'], ES_PW)['count']
+  pbar = tqdm(total=total_hits, position=thread_number, desc="Thread {}".format(thread_number), ncols=100)
   
   processed_docs = 0
   fetched_data = [FIELDS_OF_INTEREST]
@@ -180,34 +164,31 @@ def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
 
   # Scroll and add hits to the fetched_data list
   while scroll_size > 0:
-    #print('\rThread {}: Scrolling...(page {})\n'.format(thread_name, page_counter), end = '')
     es_data = ES_INSTANCE.scroll(scroll_id=sid, scroll=SCROLL_TIMEOUT)
     # Process current batch of hits
     for hit in es_data['hits']['hits']:
       processed_docs += 1
       fetched_data.append(obj_to_list(hit['_source'], FIELDS_OF_INTEREST))
-      update_percentage(thread_name, processed_docs, total_hits)
+      time.sleep(0.1)
+      pbar.update(1)
     # Update the scroll ID
     sid = es_data['_scroll_id']
     # Get the number of results that returned in the last scroll
     scroll_size = len(es_data['hits']['hits'])
     page_counter += 1
 
-  # logging.info("\nThread {}: {} documents have been fetched.".format(thread_name, processed_docs))
+  # log.info("\nThread {}: {} documents have been fetched.".format(thread_name, processed_docs))
   return fetched_data 
 
 def get_actual_dates(args, starting_date, ending_date):
-  # headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
   search_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_search"
   ES_PW = args['password'] if args['password'] != None else os.environ[args['secret_password']] if args['secret_password'] != None and args['secret_password'] in os.environ else ''
   if starting_date == 'now-1000y':
     sdate_query = build_es_query(args, starting_date, ending_date, 'asc', 1)
-    # r = requests.get(search_url, data=sdate_query, headers=headers, auth=HTTPBasicAuth(args['user'], ES_PW), timeout=10).json()
     r = request_to_es(search_url, sdate_query, args['user'], ES_PW)
     starting_date = r['hits']['hits'][0]['_source'][args['time_field']]
   if ending_date == 'now+1000y':
     edate_query = build_es_query(args, starting_date, ending_date, 'desc', 1)
-    # r = requests.get(search_url, data=edate_query, headers=headers, auth=HTTPBasicAuth(args['user'], ES_PW), timeout=10).json()
     r = request_to_es(search_url, edate_query, args['user'], ES_PW)
     ending_date = r['hits']['hits'][0]['_source'][args['time_field']]
   return [starting_date, ending_date]
@@ -227,22 +208,17 @@ def make_time_intervals(args, threads, starting_date, ending_date):
   return dates_for_threads
 
 def main():
-  global threads_totals
   args = fetch_arguments()
   check_arguments_conflicts(args)
 
-  logging.info("################ LAUNCHING THE WEB SCRIPT ################\n")
+  log.info("################ LAUNCHING THE ES_TO_CSV SCRIPT ################\n")
 
   EXPORT_PATH = check_csv_already_written(args['export_path'])
 
   if args['enable_multiprocessing']:
-    logging.info('MULTITHREAD PROCESSING\n')
+    log.info('MULTITHREAD PROCESSING\n')
     threads_to_use = min(multiprocessing.cpu_count(), safe_toint_cast(args['threads'])) if args['threads'] != None else multiprocessing.cpu_count()
-    threads_totals = (['0%' for i in range(threads_to_use)])
     lists_to_join = [[] for i in range(threads_to_use)]
-    
-    printing_thread = threading.Thread(target=thread_printer)
-    printing_thread.start()
     
     # Split total time range in equals time intervals so to let each thread work on a partial set of data and store the resulting list as a sublist of the lists_to_join list
     threads_intervals = make_time_intervals(args, threads_to_use, args['starting_date'], args['ending_date'])
@@ -254,36 +230,39 @@ def main():
     with ThreadPoolExecutor(threads_to_use) as executor:
       [*lists_to_join] = executor.map(fetch_es_data, *thread_function_arguments)
 
-    printing_thread.join()
     # Create the final list, concatenating the partial sublists resulting from the threads processing and removing each first element of each sublist starting from the second one since it would be equal to the final element of the previous sublist (range in es query use the gte and lte operators)
     list_to_write = lists_to_join.pop(0)
     for fetched_partial_list in lists_to_join:
       fetched_partial_list.pop(0)
       list_to_write += fetched_partial_list
   else:
-    logging.info('SINGLE THREAD PROCESSING\n')
-    threads_totals = ['0%']
+    log.info('SINGLE THREAD PROCESSING\n')
     printing_thread = threading.Thread(target=thread_printer)
     printing_thread.start()
     
     list_to_write = fetch_es_data(args, args['starting_date'], args['ending_date'])
     printing_thread.join()
   
-  logging.info('\nWriting the csv file...')
+  log.info('Writing the csv file...')
   with open(EXPORT_PATH, 'w', newline='') as csvfile:
     writer = csv.writer(csvfile)
     writer.writerows(list_to_write)
 
 
 if __name__ == "__main__":
-  format = "%(asctime)s -- %(message)s"
+  formatter = logging.Formatter("%(asctime)s -- %(message)s")
   logging.getLogger("requests").setLevel(logging.WARNING)
   logging.getLogger("urllib3").setLevel(logging.WARNING)
   logging.getLogger("concurrent").setLevel(logging.WARNING)
   logging.getLogger("asyncio").setLevel(logging.WARNING)
   logging.getLogger("elasticsearch").setLevel(logging.WARNING)
-  logging.basicConfig(format=format, level=logging.INFO, datefmt="[%Y-%m-%dT%H:%M:%S]")
 
-  threads_totals = []
+  log = logging.getLogger(__name__)
+  log.setLevel(logging.INFO)
+  handler = TqdmLoggingHandler()
+  handler.setFormatter(formatter)
+  log.addHandler(handler)
+
+  pbars = []
   main()
 
