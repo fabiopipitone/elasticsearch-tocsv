@@ -103,10 +103,10 @@ def build_es_query(args, starting_date, ending_date, order='asc', size=None, cou
   return ES_QUERY
 
 def build_es_connection(args):
-  FROM_PW = args['password'] if args['password'] != None else os.environ[args['secret_password']] if args['secret_password'] != None and args['secret_password'] in os.environ else ''
+  ES_PW = args['password'] if args['password'] != None else os.environ[args['secret_password']] if args['secret_password'] != None and args['secret_password'] in os.environ else ''
   return Elasticsearch( hosts=[{'host': args['host'], 'port': args['port']}],
                           connection_class=RequestsHttpConnection,
-                          http_auth=(args['user'], FROM_PW),
+                          http_auth=(args['user'], ES_PW),
                           use_ssl=args['ssl'],
                           verify_certs=args['cert_verification'],
                           retry_on_timeout=True,
@@ -122,6 +122,7 @@ def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
   logging.info("Thread {}: starts fetching data from {} to {}".format(thread_name, starting_date, ending_date))
   ES_INSTANCE = build_es_connection(args)
   ES_INDEX = args['index']
+  ES_PW = args['password'] if args['password'] != None else os.environ[args['secret_password']] if args['secret_password'] != None and args['secret_password'] in os.environ else ''
   SCROLL_TIMEOUT = args['scroll_timeout']
   BATCH_SIZE = args['batch_size']
   FIELDS_OF_INTEREST = args['fields'].split(',')
@@ -130,7 +131,7 @@ def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
 
   headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
   count_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
-  total_hits = requests.get(count_url, data=ES_COUNT_QUERY, headers=headers, auth=HTTPBasicAuth(args['user'], args['password'])).json()['count']
+  total_hits = requests.get(count_url, data=ES_COUNT_QUERY, headers=headers, auth=HTTPBasicAuth(args['user'], ES_PW)).json()['count']
   
   processed_docs = 0
   fetched_data = [FIELDS_OF_INTEREST]
@@ -177,13 +178,14 @@ def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
 def get_actual_dates(args, starting_date, ending_date):
   headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
   search_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_search"
+  ES_PW = args['password'] if args['password'] != None else os.environ[args['secret_password']] if args['secret_password'] != None and args['secret_password'] in os.environ else ''
   if starting_date == 'now-1000y':
     sdate_query = build_es_query(args, starting_date, ending_date, 'asc', 1)
-    r = requests.get(search_url, data=sdate_query, headers=headers, auth=HTTPBasicAuth(args['user'], args['password'])).json()
+    r = requests.get(search_url, data=sdate_query, headers=headers, auth=HTTPBasicAuth(args['user'], ES_PW)).json()
     starting_date = r['hits']['hits'][0]['_source'][args['time_field']]
   if ending_date == 'now+1000y':
     edate_query = build_es_query(args, starting_date, ending_date, 'desc', 1)
-    r = requests.get(search_url, data=edate_query, headers=headers, auth=HTTPBasicAuth(args['user'], args['password'])).json()
+    r = requests.get(search_url, data=edate_query, headers=headers, auth=HTTPBasicAuth(args['user'], ES_PW)).json()
     ending_date = r['hits']['hits'][0]['_source'][args['time_field']]
   return [starting_date, ending_date]
 
