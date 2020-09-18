@@ -155,7 +155,8 @@ def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
       body = ES_QUERY
     )
   except Exception as e:
-    logging.critical("\nThread {}: something went wrong when fetching the data from Elasticsearch. Please check your connection parameters. Here's the raised exception: \n\n{}".format(thread_name, e))
+    logging.error("\nThread {}: something went wrong when fetching the data from Elasticsearch. Please check your connection parameters. Here's the raised exception: \n\n{}".format(thread_name, e))
+    os._exit(os.EX_OK)
   
   # Save parameters for scrolling
   sid = es_data['_scroll_id']
@@ -174,7 +175,6 @@ def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
     for hit in es_data['hits']['hits']:
       processed_docs += 1
       fetched_data.append(obj_to_list(hit['_source'], FIELDS_OF_INTEREST))
-      time.sleep(0.1)
       pbar.update(1)
     # Update the scroll ID
     sid = es_data['_scroll_id']
