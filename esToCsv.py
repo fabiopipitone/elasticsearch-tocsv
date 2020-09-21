@@ -6,6 +6,8 @@ from concurrent.futures import ProcessPoolExecutor
 import json, ast, code, copy, os, urllib3, hashlib, csv, sys, argparse, multiprocessing, requests, logging, math, threading, time
 from datetime import datetime, timedelta
 import dateutil.parser as dateparser
+from dateutil import tz
+import pytz
 from requests.auth import HTTPBasicAuth
 from tqdm import *
 import getpass
@@ -56,13 +58,22 @@ def request_to_es(url, query, user='', pwd='', timeout=10):
     os._exit(os.EX_OK)
   return r
 
+def check_timezone_validity(timezone):
+  if timezone is None:
+    return tz.tzlocal()
+  elif timezone in pytz.all_timezones:
+    return tz.gettz(timezone)
+  else:
+    logging.error("\n\nSomething is wrong with the timezone you set {}. Please set a timezone included in the pytz.all_timezones or leave it blank to set the local timezone of this machine".format(e))
+    os._exit(os.EX_OK)
+
 def fetch_arguments():
   ap = argparse.ArgumentParser()
   ap.add_argument("-ho", "--host", required=False, help="Elasticsearch host. If not set, localhost will be used", default="localhost")
   ap.add_argument("-f", "--fields", required=True, help="Elasticsearch fields, passed as a string with commas between fields and no whitespaces (e.g. \"field1,field2\")")
   ap.add_argument("-e", "--export_path", required=False, help="path where to store the csv file. If not set, 'es_export.csv' will be used", type=check_csv_valid_filename, default="es_export.csv")
-  ap.add_argument("-sd", "--starting_date", required=False, help="query starting date. Must be set in iso 8601 format, with or without the timezone (e.g. \"YYYY-MM-ddTHH:mm:ss\" or \"YYYY-MM-ddTHH:mm:ss+01:00\")", default='now-1000y')
-  ap.add_argument("-ed", "--ending_date", required=False, help="query ending date. Must be set in iso 8601 format, with or without the timezone (e.g. \"YYYY-MM-ddTHH:mm:ss\" or \"YYYY-MM-ddTHH:mm:ss+01:00\")", default='now+1000y')
+  ap.add_argument("-sd", "--starting_date", required=False, help="query starting date. Must be set in iso 8601 format, without the timezone that can be specified in the --timezone option (e.g. \"YYYY-MM-ddTHH:mm:ss\")", default='now-1000y')
+  ap.add_argument("-ed", "--ending_date", required=False, help="query ending date. Must be set in iso 8601 format, without the timezone that can be specified in the --timezone option (e.g. \"YYYY-MM-ddTHH:mm:ss\")", default='now+1000y')
   ap.add_argument("-t", "--time_field", required=False, help="time field to query on. If not set and --starting_date or --ending_date are set and exception will be raised")
   ap.add_argument("-q", "--query_string", required=False, help="Elasticsearch query string. Put it between quotes and escape internal quotes characters (e.g. \"one_field: foo AND another_field.keyword: \\\"bar\\\"\"", default="*")
   ap.add_argument("-p", "--port", required=False, help="Elasticsearch port. If not set, the default port 9200 will be used", default=9200, type=int)
@@ -76,6 +87,7 @@ def fetch_arguments():
   ap.add_argument("-o", "--scroll_timeout", required=False, help="scroll window timeout. Default to 4m", default='4m')
   ap.add_argument("-pn", "--process_number", required=False, help="number of processes to run the script on. Default to max number of processes for the hosting machine", type=int)
   ap.add_argument("-em", "--enable_multiprocessing", required=False, help="enable the multiprocess options. Default to False. Set to True to exploit multiprocessing. If set to True a --time_field to sort on must be set or an exception will be raised", type=bool, default=False)
+  ap.add_argument("-tz", "--timezone", required=False, help="timezone to set according to the time zones naming convention (e.g. \"America/New_York\" or \"Europe/Paris\" or \"UTC\"). If not set, the local timezone of the present machine will be used", default=None)
   return vars(ap.parse_args())
 
 def check_arguments_conflicts(args):
@@ -85,6 +97,7 @@ def check_arguments_conflicts(args):
   if args['enable_multiprocessing'] and args['time_field'] == None:
     sys.exit("\nYou have to set a --time_field in order to use multiprocessing.")
 
+  args['timezone'] = check_timezone_validity(args['timezone'])
   check_valid_date(args['starting_date'])
   check_valid_date(args['ending_date'])
   
@@ -184,7 +197,7 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
     page_counter += 1
   return fetched_data 
 
-def get_actual_dates(args, starting_date, ending_date):
+def get_actual_bound_dates(args, starting_date, ending_date):
   search_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_search"
   if starting_date == 'now-1000y':
     sdate_query = build_es_query(args, starting_date, ending_date, 'asc', 1)
@@ -194,20 +207,22 @@ def get_actual_dates(args, starting_date, ending_date):
     edate_query = build_es_query(args, starting_date, ending_date, 'desc', 1)
     r = request_to_es(search_url, edate_query, args['user'], args['password'])
     ending_date = r['hits']['hits'][0]['_source'][args['time_field']]
+  starting_date = dateparser.parse(starting_date).astimezone(args['timezone']).isoformat()
+  ending_date = dateparser.parse(ending_date).astimezone(args['timezone']).isoformat()
   return [starting_date, ending_date]
 
 def make_time_intervals(args, processes, starting_date, ending_date):
-  starting_date, ending_date = get_actual_dates(args, starting_date, ending_date)
+  starting_date, ending_date = get_actual_bound_dates(args, starting_date, ending_date)
   sdate_in_seconds = dateparser.parse(starting_date).timestamp()
   edate_in_seconds = dateparser.parse(ending_date).timestamp()
   interval_in_seconds = (edate_in_seconds - sdate_in_seconds) / processes
   dates_for_processes = [[], []]
   for process in range(0, processes):
-    sdate = datetime.fromtimestamp(sdate_in_seconds + process*interval_in_seconds).isoformat()
-    edate = datetime.fromtimestamp(sdate_in_seconds + (process + 1)*interval_in_seconds).isoformat()
+    sdate = datetime.fromtimestamp(sdate_in_seconds + process*interval_in_seconds).astimezone(args['timezone']).isoformat()
+    edate = datetime.fromtimestamp(sdate_in_seconds + (process + 1)*interval_in_seconds).astimezone(args['timezone']).isoformat()
     dates_for_processes[0].append(sdate)
     dates_for_processes[1].append(edate)
-  dates_for_processes[1][-1] = datetime.fromtimestamp(edate_in_seconds).isoformat()
+  dates_for_processes[1][-1] = ending_date
   return dates_for_processes
 
 def main():
