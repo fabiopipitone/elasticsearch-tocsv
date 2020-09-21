@@ -2,6 +2,7 @@ from elasticsearch import Elasticsearch
 from elasticsearch import RequestsHttpConnection
 from ssl import create_default_context
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 import json, ast, code, copy, os, urllib3, hashlib, csv, sys, argparse, multiprocessing, requests, logging, math, threading, time
 from datetime import datetime, timedelta
 import dateutil.parser as dateparser
@@ -71,10 +72,10 @@ def fetch_arguments():
   ap.add_argument("-s", "--ssl", required=False, help="require ssl connection. Default to False. Set to True to enable it", type=bool, default=False)
   ap.add_argument("-c", "--cert_verification", required=False, help="require ssl certificate verification. Default to False. Set to True to enable it", type=bool, default=False)
   ap.add_argument("-i", "--index", required=True, help="Elasticsearch index pattern to query on. To use wildcard (*) put the index in quotes (e.g. \"my-indices*\")")
-  ap.add_argument("-b", "--batch_size", required=False, help="batch size for the scroll API. Default to 5000. Max 10000", type=int, default=5000)
+  ap.add_argument("-b", "--batch_size", required=False, help="batch size for the scroll API. Default to 5000. Max 10000. Increasing it might impact the ES instance heap memory. If you want to set a value greater than 10000, you must set the max_result_window elasticsearch property accordingly first. Please check out the elasticsearch documentation before increasing that value on the specified index --> https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules.html", type=int, default=5000)
   ap.add_argument("-o", "--scroll_timeout", required=False, help="scroll window timeout. Default to 4m", default='4m')
-  ap.add_argument("-th", "--threads", required=False, help="number of threads to run the script on. Default to max number of thread for the hosting machine", type=int)
-  ap.add_argument("-em", "--enable_multiprocessing", required=False, help="enable the multithread options. Default to False. Set to True to exploit multiprocessing. If set to True a --time_field to sort on must be set or an exception will be raised", type=bool, default=False)
+  ap.add_argument("-pn", "--process_number", required=False, help="number of processes to run the script on. Default to max number of processes for the hosting machine", type=int)
+  ap.add_argument("-em", "--enable_multiprocessing", required=False, help="enable the multiprocess options. Default to False. Set to True to exploit multiprocessing. If set to True a --time_field to sort on must be set or an exception will be raised", type=bool, default=False)
   return vars(ap.parse_args())
 
 def check_arguments_conflicts(args):
@@ -127,10 +128,10 @@ def build_es_connection(args):
                           retry_on_timeout=True,
                           timeout=50 )
 
-def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
+def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
   global pbars
-  thread_number = 0 if thread_name == 'Main' else thread_name
-  log.info("Thread {}: starts fetching data from {} to {}".format(thread_name, starting_date, ending_date))
+  process_number = 0 if process_name == 'Main' else process_name
+  log.info("Process {}: starts fetching data from {} to {}".format(process_name, starting_date, ending_date))
   ES_INSTANCE = build_es_connection(args)
   ES_INDEX = args['index']
   SCROLL_TIMEOUT = args['scroll_timeout']
@@ -141,7 +142,7 @@ def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
 
   count_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
   total_hits = request_to_es(count_url, ES_COUNT_QUERY, args['user'], args['password'])['count']
-  pbar = tqdm(total=total_hits, position=thread_number, desc="Thread {}".format(thread_number), ncols=100)
+  pbar = tqdm(total=total_hits, position=process_number, leave=False, desc="Process {}".format(process_number), ncols=100)
   
   processed_docs = 0
   fetched_data = [FIELDS_OF_INTEREST]
@@ -155,7 +156,7 @@ def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
       body = ES_QUERY
     )
   except Exception as e:
-    logging.error("\nThread {}: something went wrong when fetching the data from Elasticsearch. Please check your connection parameters. Here's the raised exception: \n\n{}".format(thread_name, e))
+    logging.error("\Process {}: something went wrong when fetching the data from Elasticsearch. Please check your connection parameters. Here's the raised exception: \n\n{}".format(process_name, e))
     os._exit(os.EX_OK)
   
   # Save parameters for scrolling
@@ -181,8 +182,6 @@ def fetch_es_data(args, starting_date, ending_date, thread_name='Main'):
     # Get the number of results that returned in the last scroll
     scroll_size = len(es_data['hits']['hits'])
     page_counter += 1
-
-  # log.info("\nThread {}: {} documents have been fetched.".format(thread_name, processed_docs))
   return fetched_data 
 
 def get_actual_dates(args, starting_date, ending_date):
@@ -197,19 +196,19 @@ def get_actual_dates(args, starting_date, ending_date):
     ending_date = r['hits']['hits'][0]['_source'][args['time_field']]
   return [starting_date, ending_date]
 
-def make_time_intervals(args, threads, starting_date, ending_date):
+def make_time_intervals(args, processes, starting_date, ending_date):
   starting_date, ending_date = get_actual_dates(args, starting_date, ending_date)
   sdate_in_seconds = dateparser.parse(starting_date).timestamp()
   edate_in_seconds = dateparser.parse(ending_date).timestamp()
-  interval_in_seconds = (edate_in_seconds - sdate_in_seconds) / threads
-  dates_for_threads = [[], []]
-  for thread in range(0, threads):
-    sdate = datetime.fromtimestamp(sdate_in_seconds + thread*interval_in_seconds).isoformat()
-    edate = datetime.fromtimestamp(sdate_in_seconds + (thread + 1)*interval_in_seconds).isoformat()
-    dates_for_threads[0].append(sdate)
-    dates_for_threads[1].append(edate)
-  dates_for_threads[1][-1] = datetime.fromtimestamp(edate_in_seconds).isoformat()
-  return dates_for_threads
+  interval_in_seconds = (edate_in_seconds - sdate_in_seconds) / processes
+  dates_for_processes = [[], []]
+  for process in range(0, processes):
+    sdate = datetime.fromtimestamp(sdate_in_seconds + process*interval_in_seconds).isoformat()
+    edate = datetime.fromtimestamp(sdate_in_seconds + (process + 1)*interval_in_seconds).isoformat()
+    dates_for_processes[0].append(sdate)
+    dates_for_processes[1].append(edate)
+  dates_for_processes[1][-1] = datetime.fromtimestamp(edate_in_seconds).isoformat()
+  return dates_for_processes
 
 def main():
   args = fetch_arguments()
@@ -221,32 +220,28 @@ def main():
   EXPORT_PATH = check_csv_already_written(args['export_path'])
 
   if args['enable_multiprocessing']:
-    log.info('MULTITHREAD PROCESSING\n')
-    threads_to_use = min(multiprocessing.cpu_count(), safe_toint_cast(args['threads'])) if args['threads'] != None else multiprocessing.cpu_count()
-    lists_to_join = [[] for i in range(threads_to_use)]
+    log.info('MULTIPROCESSING ENABLED\n')
+    processes_to_use = min(multiprocessing.cpu_count(), safe_toint_cast(args['process_number'])) if args['process_number'] != None else multiprocessing.cpu_count()
+    lists_to_join = [[] for i in range(processes_to_use)]
     
-    # Split total time range in equals time intervals so to let each thread work on a partial set of data and store the resulting list as a sublist of the lists_to_join list
-    threads_intervals = make_time_intervals(args, threads_to_use, args['starting_date'], args['ending_date'])
+    # Split total time range in equals time intervals so to let each process work on a partial set of data and store the resulting list as a sublist of the lists_to_join list
+    processes_intervals = make_time_intervals(args, processes_to_use, args['starting_date'], args['ending_date'])
 
-    # Build the list of arguments to pass to the function each thread will run
-    thread_function_arguments = [[args for i in range(threads_to_use)], *threads_intervals, [i for i in range(threads_to_use)]]
+    # Build the list of arguments to pass to the function each process will run
+    process_function_arguments = [[args for i in range(processes_to_use)], *processes_intervals, [i for i in range(processes_to_use)]]
     
-    # Create and start threads_to_use number of threads
-    with ThreadPoolExecutor(threads_to_use) as executor:
-      [*lists_to_join] = executor.map(fetch_es_data, *thread_function_arguments)
+    # Create and start processes_to_use number of processes
+    with ProcessPoolExecutor(processes_to_use) as executor:
+      [*lists_to_join] = executor.map(fetch_es_data, *process_function_arguments)
 
-    # Create the final list, concatenating the partial sublists resulting from the threads processing and removing each first element of each sublist starting from the second one since it would be equal to the final element of the previous sublist (range in es query use the gte and lte operators)
+    # Create the final list, concatenating the partial sublists resulting from the processes processing and removing each first element of each sublist starting from the second one since it would be equal to the final element of the previous sublist (range in es query use the gte and lte operators)
     list_to_write = lists_to_join.pop(0)
     for fetched_partial_list in lists_to_join:
       fetched_partial_list.pop(0)
       list_to_write += fetched_partial_list
   else:
-    log.info('SINGLE THREAD PROCESSING\n')
-    printing_thread = threading.Thread(target=thread_printer)
-    printing_thread.start()
-    
+    log.info('SINGLE PROCESS RUN\n')
     list_to_write = fetch_es_data(args, args['starting_date'], args['ending_date'])
-    printing_thread.join()
   
   log.info('Writing the csv file...')
   with open(EXPORT_PATH, 'w', newline='') as csvfile:
