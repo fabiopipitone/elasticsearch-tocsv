@@ -58,13 +58,20 @@ def request_to_es(url, query, user='', pwd='', timeout=10):
     os._exit(os.EX_OK)
   return r
 
+def valid_bound_dates(args):
+  if args['starting_date'] != 'now-1000y' and args['ending_date'] != 'now+1000y':
+    sdate = dateparser.parse(args['starting_date']).astimezone(args['timezone'])
+    edate = dateparser.parse(args['ending_date']).astimezone(args['timezone'])
+    return edate > sdate
+  return True
+
 def check_timezone_validity(timezone):
   if timezone is None:
     return tz.tzlocal()
   elif timezone in pytz.all_timezones:
     return tz.gettz(timezone)
   else:
-    logging.error("\n\nSomething is wrong with the timezone you set {}. Please set a timezone included in the pytz.all_timezones or leave it blank to set the local timezone of this machine".format(e))
+    logging.error("\n\nSomething is wrong with the timezone you set {}. Please set a timezone included in the pytz.all_timezones or leave it blank to set the local timezone of this machine".format(timezone))
     os._exit(os.EX_OK)
 
 def fetch_arguments():
@@ -100,7 +107,10 @@ def check_arguments_conflicts(args):
   args['timezone'] = check_timezone_validity(args['timezone'])
   check_valid_date(args['starting_date'])
   check_valid_date(args['ending_date'])
-  
+
+  if not valid_bound_dates(args):
+    sys.exit("\nThe --starting_date you set ({}) comes after the --ending_date ({}). Please set a valid time interval".format(args['starting_date'], args['ending_date']))
+
   return True
 
 def final_pw(args):
@@ -118,7 +128,10 @@ def check_csv_already_written(filename):
       sys.exit("\nExiting script not to overwrite the file. No query has been run.")
   return filename
 
-def build_es_query(args, starting_date, ending_date, order='asc', size=None, count_query=False):
+def build_source_query(fields_of_interest):
+  return  '\"_source\":' + str(fields_of_interest.split(',')).replace("'",'"') + ','
+
+def build_es_query(args, starting_date, ending_date, order='asc', size=None, count_query=False, source=None):
   QUERY_STRING = args['query_string'] #TODO chech how to properly escape internal quotes
   SIZE = ('"size": ' + str(size) + ',') if size != None else ''
   if args['time_field'] != None:
@@ -129,7 +142,8 @@ def build_es_query(args, starting_date, ending_date, order='asc', size=None, cou
     RANGE_QUERY = ",{\"range\":{\"" + TIME_FIELD + "\":{\"gte\":\"" + FROM_DATE + "\",\"lte\":\"" + TO_DATE + "\"}}}"
   else:
     SORT_QUERY = RANGE_QUERY = ''
-  ES_QUERY = '{' + SIZE + SORT_QUERY + '"query":{"bool":{"must":[{"query_string":{"query":"' + QUERY_STRING + '"}}' + RANGE_QUERY + ']}}}'
+  SOURCE_QUERY = build_source_query(source) if not source == None and not count_query else ''
+  ES_QUERY = '{' + SOURCE_QUERY + SIZE + SORT_QUERY + '"query":{"bool":{"must":[{"query_string":{"query":"' + QUERY_STRING + '"}}' + RANGE_QUERY + ']}}}'
   return ES_QUERY
 
 def build_es_connection(args):
@@ -150,8 +164,8 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
   SCROLL_TIMEOUT = args['scroll_timeout']
   BATCH_SIZE = args['batch_size']
   FIELDS_OF_INTEREST = args['fields'].split(',')
-  ES_QUERY = build_es_query(args, starting_date, ending_date)
-  ES_COUNT_QUERY = build_es_query(args, starting_date, ending_date, count_query=True)
+  ES_QUERY = build_es_query(args, starting_date, ending_date, source=args['fields'])
+  ES_COUNT_QUERY = build_es_query(args, starting_date, ending_date, count_query=True, source=args['fields'])
 
   count_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
   total_hits = request_to_es(count_url, ES_COUNT_QUERY, args['user'], args['password'])['count']
@@ -200,11 +214,11 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
 def get_actual_bound_dates(args, starting_date, ending_date):
   search_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_search"
   if starting_date == 'now-1000y':
-    sdate_query = build_es_query(args, starting_date, ending_date, 'asc', 1)
+    sdate_query = build_es_query(args, starting_date, ending_date, 'asc', 1, source=args['time_field'])
     r = request_to_es(search_url, sdate_query, args['user'], args['password'])
     starting_date = r['hits']['hits'][0]['_source'][args['time_field']]
   if ending_date == 'now+1000y':
-    edate_query = build_es_query(args, starting_date, ending_date, 'desc', 1)
+    edate_query = build_es_query(args, starting_date, ending_date, 'desc', 1, source=args['time_field'])
     r = request_to_es(search_url, edate_query, args['user'], args['password'])
     ending_date = r['hits']['hits'][0]['_source'][args['time_field']]
   starting_date = dateparser.parse(starting_date).astimezone(args['timezone']).isoformat()
@@ -227,8 +241,8 @@ def make_time_intervals(args, processes, starting_date, ending_date):
 
 def main():
   args = fetch_arguments()
-  final_pw(args)
   check_arguments_conflicts(args)
+  final_pw(args)
 
   log.info("################ LAUNCHING THE ES_TO_CSV SCRIPT ################\n")
 
