@@ -7,6 +7,7 @@ import json, ast, code, copy, os, urllib3, hashlib, csv, sys, argparse, multipro
 from datetime import datetime, timedelta
 import dateutil.parser as dateparser
 from dateutil import tz
+import pandas as pd
 import pytz
 from requests.auth import HTTPBasicAuth
 from tqdm import *
@@ -30,11 +31,6 @@ class TqdmLoggingHandler(logging.Handler):
       self.handleError(record)
 
 ############ UTILITY FUNCTIONS ############
-def obj_to_list(object, fields):
-  list_of_values = []
-  for field in fields:
-    list_of_values.append(object[field]) if field in object else list_of_values.append(None)
-  return list_of_values
 
 def check_csv_valid_filename(filename):
   if filename[-4:] != '.csv':
@@ -156,7 +152,6 @@ def build_es_connection(args):
                           timeout=50 )
 
 def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
-  global pbars
   process_number = 0 if process_name == 'Main' else process_name
   log.info("Process {}: starts fetching data from {} to {}".format(process_name, starting_date, ending_date))
   ES_INSTANCE = build_es_connection(args)
@@ -169,10 +164,10 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
 
   count_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
   total_hits = request_to_es(count_url, ES_COUNT_QUERY, args['user'], args['password'])['count']
-  pbar = tqdm(total=total_hits, position=process_number, leave=False, desc="Process {}".format(process_number), ncols=100)
+  # log.info("Process {} counted {} documents in its interval.".format(process_name, total_hits)) #TODO remove
+  pbar = tqdm(total=total_hits, position=process_number, leave=False, desc="Process {}".format(process_name), ncols=100)
   
-  processed_docs = 0
-  fetched_data = [FIELDS_OF_INTEREST]
+  fetched_data = []
 
   try:
     es_data = ES_INSTANCE.search(
@@ -189,40 +184,42 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
   # Save parameters for scrolling
   sid = es_data['_scroll_id']
   scroll_size = len(es_data['hits']['hits'])
-  page_counter = 1
 
   # Process current batch of hits before starting to scroll
   for hit in es_data['hits']['hits']:
-    processed_docs += 1
-    fetched_data.append(obj_to_list(hit['_source'], FIELDS_OF_INTEREST))
+    fetched_data.append(hit['_source']) 
 
   # Scroll and add hits to the fetched_data list
   while scroll_size > 0:
     es_data = ES_INSTANCE.scroll(scroll_id=sid, scroll=SCROLL_TIMEOUT)
     # Process current batch of hits
     for hit in es_data['hits']['hits']:
-      processed_docs += 1
-      fetched_data.append(obj_to_list(hit['_source'], FIELDS_OF_INTEREST))
+      fetched_data.append(hit['_source']) 
       pbar.update(1)
     # Update the scroll ID
     sid = es_data['_scroll_id']
     # Get the number of results that returned in the last scroll
     scroll_size = len(es_data['hits']['hits'])
-    page_counter += 1
-  return fetched_data 
+  # log.info("Process {} has terminated".format(process_name)) # TODO remove
+  return fetched_data
+
+def add_timezone(date_string, timezone):
+  return dateparser.parse(date_string).astimezone(timezone).isoformat()
 
 def get_actual_bound_dates(args, starting_date, ending_date):
   search_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_search"
-  if starting_date == 'now-1000y':
-    sdate_query = build_es_query(args, starting_date, ending_date, 'asc', 1, source=args['time_field'])
-    r = request_to_es(search_url, sdate_query, args['user'], args['password'])
-    starting_date = r['hits']['hits'][0]['_source'][args['time_field']]
-  if ending_date == 'now+1000y':
-    edate_query = build_es_query(args, starting_date, ending_date, 'desc', 1, source=args['time_field'])
-    r = request_to_es(search_url, edate_query, args['user'], args['password'])
-    ending_date = r['hits']['hits'][0]['_source'][args['time_field']]
-  starting_date = dateparser.parse(starting_date).astimezone(args['timezone']).isoformat()
-  ending_date = dateparser.parse(ending_date).astimezone(args['timezone']).isoformat()
+  timezone = args['timezone']
+  starting_date = add_timezone(starting_date, timezone)
+  ending_date = add_timezone(ending_date, timezone)
+  # Fetch date of first element from the specified starting_date
+  sdate_query = build_es_query(args, starting_date, ending_date, 'asc', 1, source=args['time_field'])
+  r = request_to_es(search_url, sdate_query, args['user'], args['password'])
+  starting_date = add_timezone(r['hits']['hits'][0]['_source'][args['time_field']], timezone)
+  # Fetch date of last element before the specified ending_date
+  edate_query = build_es_query(args, starting_date, ending_date, 'desc', 1, source=args['time_field'])
+  r = request_to_es(search_url, edate_query, args['user'], args['password'])
+  ending_date = add_timezone(r['hits']['hits'][0]['_source'][args['time_field']], timezone)
+  # Return real starting_date and ending_date with proper timezone
   return [starting_date, ending_date]
 
 def make_time_intervals(args, processes, starting_date, ending_date):
@@ -263,19 +260,20 @@ def main():
     with ProcessPoolExecutor(processes_to_use) as executor:
       [*lists_to_join] = executor.map(fetch_es_data, *process_function_arguments)
 
-    # Create the final list, concatenating the partial sublists resulting from the processes processing and removing each first element of each sublist starting from the second one since it would be equal to the final element of the previous sublist (range in es query use the gte and lte operators)
-    list_to_write = lists_to_join.pop(0)
-    for fetched_partial_list in lists_to_join:
-      fetched_partial_list.pop(0)
-      list_to_write += fetched_partial_list
+    # Create the final list, extracting the nested documents from the main list
+    list_to_write = [doc for fetched_partial_list in lists_to_join for doc in fetched_partial_list]
+
   else:
     log.info('SINGLE PROCESS RUN\n')
     list_to_write = fetch_es_data(args, args['starting_date'], args['ending_date'])
   
-  log.info('Writing the csv file...')
-  with open(EXPORT_PATH, 'w', newline='') as csvfile:
-    writer = csv.writer(csvfile)
-    writer.writerows(list_to_write)
+  # Create the dataframe with the final list of documents
+  log.info('Creating Pandas DataFrame...')
+  df = pd.DataFrame(list_to_write, columns=args['fields'].split(','))
+
+  # Write the CSV from the dataframe
+  log.info('Exporting Pandas DataFrame as csv...')
+  df.to_csv(args['export_path'], index=False)
 
 
 if __name__ == "__main__":
@@ -292,6 +290,5 @@ if __name__ == "__main__":
   handler.setFormatter(formatter)
   log.addHandler(handler)
 
-  pbars = []
   main()
 
