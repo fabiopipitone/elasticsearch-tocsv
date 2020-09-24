@@ -74,6 +74,7 @@ def fetch_arguments():
   ap = argparse.ArgumentParser()
   ap.add_argument("-ho", "--host", required=False, help="Elasticsearch host. If not set, localhost will be used", default="localhost")
   ap.add_argument("-f", "--fields", required=True, help="Elasticsearch fields, passed as a string with commas between fields and no whitespaces (e.g. \"field1,field2\")")
+  ap.add_argument("-mf", "--metadata_fields", required=False, help="Elasticsearch metadata fields (_index, _type, _id, _score), passed as a string with commas between fields and no whitespaces (e.g. \"_id,_index\")", default='')
   ap.add_argument("-e", "--export_path", required=False, help="path where to store the csv file. If not set, 'es_export.csv' will be used", type=check_csv_valid_filename, default="es_export.csv")
   ap.add_argument("-sd", "--starting_date", required=False, help="query starting date. Must be set in iso 8601 format, without the timezone that can be specified in the --timezone option (e.g. \"YYYY-MM-ddTHH:mm:ss\")", default='now-1000y')
   ap.add_argument("-ed", "--ending_date", required=False, help="query ending date. Must be set in iso 8601 format, without the timezone that can be specified in the --timezone option (e.g. \"YYYY-MM-ddTHH:mm:ss\")", default='now+1000y')
@@ -91,7 +92,37 @@ def fetch_arguments():
   ap.add_argument("-pn", "--process_number", required=False, help="number of processes to run the script on. Default to max number of processes for the hosting machine", type=int)
   ap.add_argument("-em", "--enable_multiprocessing", required=False, help="enable the multiprocess options. Default to False. Set to True to exploit multiprocessing. If set to True a --time_field to sort on must be set or an exception will be raised", type=bool, default=False)
   ap.add_argument("-tz", "--timezone", required=False, help="timezone to set according to the time zones naming convention (e.g. \"America/New_York\" or \"Europe/Paris\" or \"UTC\"). If not set, the local timezone of the present machine will be used", default=None)
+  ap.add_argument("-rd", "--remove_duplicates", required=False, help="set to True to remove all duplicated events. Default to False. WARNING: two events with the same values of the fields specified in --fields will be considered duplicated and then unified even if on ES they might not be equal because of other fields not included in --fields. Check out the --metadata_fields option to include further info like the ES _id", default=False)
   return vars(ap.parse_args())
+
+def check_meta_fields(meta_fields_str):
+  try:
+    if meta_fields_str == '': return []
+
+    meta_fields = meta_fields_str.split(',')
+    for mf in meta_fields:
+      if mf not in ['_index', '_type', '_id', '_score']:
+        sys.exit("One of your --metadata_fields {} is not allowed. Allowed metadata fields are [_index, _type, _doc, _score]. Check out the --help to know how to set them.".format(mf))
+    return meta_fields
+  except Exception as e:
+    sys.exit("Something is wrong with the --metadata_fields you set or how you set them. Check out the --help to know how to set them. Here's the exception:\n\n{}".format(e))
+
+def check_fields(fields_str):
+  try:
+    fields = fields_str.split(',')
+    return fields
+  except Exception as e:
+    sys.exit("Something is wrong with the --fields you set. Check out the --help to know how to set them. Here's the exception:\n\n{}".format(e))
+
+
+def add_meta_fields(obj, meta_fields):
+  try:
+    for index, mf in enumerate(meta_fields):
+      obj['_source'][mf] = obj[mf]
+    return obj['_source']
+  except Exception as e:
+    log.critical("Something is wrong with the metadata retrieval in the following document {}. Here's the exception:\n\n{}".format(obj, e))
+    os._exit(os.EX_OK)
 
 def check_arguments_conflicts(args):
   if (args['starting_date'] != 'now-1000y' or args['ending_date'] != 'now+1000y') and args['time_field'] == None:
@@ -104,10 +135,24 @@ def check_arguments_conflicts(args):
   check_valid_date(args['starting_date'])
   check_valid_date(args['ending_date'])
 
+  args['fields'] = check_fields(args['fields'])
+
+  args['metadata_fields'] = check_meta_fields(args['metadata_fields'])
+  args['fields_to_export'] = args['metadata_fields'] + args['fields']
+
   if not valid_bound_dates(args):
     sys.exit("\nThe --starting_date you set ({}) comes after the --ending_date ({}). Please set a valid time interval".format(args['starting_date'], args['ending_date']))
 
   return True
+
+def test_es_connection(args):
+  try:
+    url = "http://{}:{}".format(args['host'], args['port'])
+    headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
+    r = requests.get(url, headers=headers, auth=HTTPBasicAuth(args['user'], args['password']), timeout=10)
+    if r.status_code != 200: sys.exit("Status code when trying to connect to your host at {} is not 200. Check out the reason here:\n\n{}".format(url, json.dumps(r.json(), indent=2)))
+  except Exception as e:
+    sys.exit("Something went wrong when testing the connection to your host. Check your host, port and credentials. Here's the exception:\n\n{}".format(e))
 
 def final_pw(args):
   pw = args['password'] if args['password'] != None else os.environ[args['secret_password']] if args['secret_password'] != None and args['secret_password'] in os.environ else ''
@@ -125,7 +170,7 @@ def check_csv_already_written(filename):
   return filename
 
 def build_source_query(fields_of_interest):
-  return  '\"_source\":' + str(fields_of_interest.split(',')).replace("'",'"') + ','
+  return  '\"_source\":' + str(fields_of_interest).replace("'",'"') + ','
 
 def build_es_query(args, starting_date, ending_date, order='asc', size=None, count_query=False, source=None):
   QUERY_STRING = args['query_string'] #TODO chech how to properly escape internal quotes
@@ -138,7 +183,7 @@ def build_es_query(args, starting_date, ending_date, order='asc', size=None, cou
     RANGE_QUERY = ",{\"range\":{\"" + TIME_FIELD + "\":{\"gte\":\"" + FROM_DATE + "\",\"lte\":\"" + TO_DATE + "\"}}}"
   else:
     SORT_QUERY = RANGE_QUERY = ''
-  SOURCE_QUERY = build_source_query(source) if not source == None and not count_query else ''
+  SOURCE_QUERY = build_source_query(source) if not source == [] and not count_query else ''
   ES_QUERY = '{' + SOURCE_QUERY + SIZE + SORT_QUERY + '"query":{"bool":{"must":[{"query_string":{"query":"' + QUERY_STRING + '"}}' + RANGE_QUERY + ']}}}'
   return ES_QUERY
 
@@ -158,21 +203,21 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
   ES_INDEX = args['index']
   SCROLL_TIMEOUT = args['scroll_timeout']
   BATCH_SIZE = args['batch_size']
-  FIELDS_OF_INTEREST = args['fields'].split(',')
+  DF_HEADER = ['_id'] + args['fields_to_export'] if not '_id' in args['fields_to_export'] else args['fields_to_export']
+  META_FOR_EXTRACTION = ['_id'] + args['metadata_fields'] if not '_id' in args['metadata_fields'] else args['metadata_fields']
   ES_QUERY = build_es_query(args, starting_date, ending_date, source=args['fields'])
   ES_COUNT_QUERY = build_es_query(args, starting_date, ending_date, count_query=True, source=args['fields'])
 
   count_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
   total_hits = request_to_es(count_url, ES_COUNT_QUERY, args['user'], args['password'])['count']
-  # log.info("Process {} counted {} documents in its interval.".format(process_name, total_hits)) #TODO remove
-  pbar = tqdm(total=total_hits, position=process_number, leave=False, desc="Process {}".format(process_name), ncols=100)
+  pbar = tqdm(total=total_hits, position=process_number, leave=False, desc="Process {} - Fetching".format(process_name), ncols=150)
   
   fetched_data = []
 
   try:
     es_data = ES_INSTANCE.search(
       index = ES_INDEX,
-      _source = FIELDS_OF_INTEREST,
+      _source = args['fields'],
       scroll = SCROLL_TIMEOUT,
       size = BATCH_SIZE,
       body = ES_QUERY
@@ -187,36 +232,43 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
 
   # Process current batch of hits before starting to scroll
   for hit in es_data['hits']['hits']:
-    fetched_data.append(hit['_source']) 
+    fetched_data.append(add_meta_fields(hit, META_FOR_EXTRACTION)) 
 
   # Scroll and add hits to the fetched_data list
   while scroll_size > 0:
     es_data = ES_INSTANCE.scroll(scroll_id=sid, scroll=SCROLL_TIMEOUT)
     # Process current batch of hits
     for hit in es_data['hits']['hits']:
-      fetched_data.append(hit['_source']) 
+      fetched_data.append(add_meta_fields(hit, META_FOR_EXTRACTION)) 
       pbar.update(1)
     # Update the scroll ID
     sid = es_data['_scroll_id']
     # Get the number of results that returned in the last scroll
     scroll_size = len(es_data['hits']['hits'])
   # log.info("Process {} has terminated".format(process_name)) # TODO remove
-  return fetched_data
+
+  log.info('Process {} is creating its Pandas DataFrame...'.format(process_name))
+  # df = pd.DataFrame(fetched_data, columns=args['fields'].split(','))
+  df = pd.DataFrame(fetched_data, columns=DF_HEADER)
+  return df
 
 def add_timezone(date_string, timezone):
-  return dateparser.parse(date_string).astimezone(timezone).isoformat()
+  try:
+    return dateparser.parse(date_string).astimezone(timezone).isoformat()
+  except:
+    sys.exit("Either the --starting_date ({}) or the --ending_date ({}) you set are not in the valid iso8601 format (YYYY-MM-ddTHH:mm:ss) and the dateparser raised an exception. Please use the standard iso8601 format")
 
 def get_actual_bound_dates(args, starting_date, ending_date):
   search_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_search"
   timezone = args['timezone']
-  starting_date = add_timezone(starting_date, timezone)
-  ending_date = add_timezone(ending_date, timezone)
+  starting_date = add_timezone(starting_date, timezone) if not starting_date == "now-1000y" else starting_date
+  ending_date = add_timezone(ending_date, timezone) if not ending_date == "now+1000y" else ending_date
   # Fetch date of first element from the specified starting_date
-  sdate_query = build_es_query(args, starting_date, ending_date, 'asc', 1, source=args['time_field'])
+  sdate_query = build_es_query(args, starting_date, ending_date, 'asc', 1, source=args['time_field'].split())
   r = request_to_es(search_url, sdate_query, args['user'], args['password'])
   starting_date = add_timezone(r['hits']['hits'][0]['_source'][args['time_field']], timezone)
   # Fetch date of last element before the specified ending_date
-  edate_query = build_es_query(args, starting_date, ending_date, 'desc', 1, source=args['time_field'])
+  edate_query = build_es_query(args, starting_date, ending_date, 'desc', 1, source=args['time_field'].split())
   r = request_to_es(search_url, edate_query, args['user'], args['password'])
   ending_date = add_timezone(r['hits']['hits'][0]['_source'][args['time_field']], timezone)
   # Return real starting_date and ending_date with proper timezone
@@ -240,6 +292,7 @@ def main():
   args = fetch_arguments()
   check_arguments_conflicts(args)
   final_pw(args)
+  test_es_connection(args)
 
   log.info("################ LAUNCHING THE ES_TO_CSV SCRIPT ################\n")
 
@@ -260,20 +313,23 @@ def main():
     with ProcessPoolExecutor(processes_to_use) as executor:
       [*lists_to_join] = executor.map(fetch_es_data, *process_function_arguments)
 
-    # Create the final list, extracting the nested documents from the main list
-    list_to_write = [doc for fetched_partial_list in lists_to_join for doc in fetched_partial_list]
+    # Concat dataframes of single process into a unique dataframe
+    log.info("Concatenating single dataframes to create the final one")
+    final_df = pd.concat(lists_to_join)
 
   else:
     log.info('SINGLE PROCESS RUN\n')
-    list_to_write = fetch_es_data(args, args['starting_date'], args['ending_date'])
-  
-  # Create the dataframe with the final list of documents
-  log.info('Creating Pandas DataFrame...')
-  df = pd.DataFrame(list_to_write, columns=args['fields'].split(','))
+    final_df = fetch_es_data(args, args['starting_date'], args['ending_date'])
+
+  if args['remove_duplicates']:
+    log.info('Removing possible duplicates from the dataframe...')
+    final_df.drop_duplicates(subset=args['fields_to_export'], inplace=True)
+  else:
+    final_df.drop_duplicates(subset=['_id', *args['fields_to_export']], inplace=True)
 
   # Write the CSV from the dataframe
   log.info('Exporting Pandas DataFrame as csv...')
-  df.to_csv(args['export_path'], index=False)
+  final_df.to_csv(args['export_path'], index=False, columns=args['fields_to_export'])
 
 
 if __name__ == "__main__":
