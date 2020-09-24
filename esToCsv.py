@@ -93,6 +93,7 @@ def fetch_arguments():
   ap.add_argument("-em", "--enable_multiprocessing", required=False, help="enable the multiprocess options. Default to False. Set to True to exploit multiprocessing. If set to True a --time_field to sort on must be set or an exception will be raised", type=bool, default=False)
   ap.add_argument("-tz", "--timezone", required=False, help="timezone to set according to the time zones naming convention (e.g. \"America/New_York\" or \"Europe/Paris\" or \"UTC\"). If not set, the local timezone of the present machine will be used", default=None)
   ap.add_argument("-rd", "--remove_duplicates", required=False, help="set to True to remove all duplicated events. Default to False. WARNING: two events with the same values of the fields specified in --fields will be considered duplicated and then unified even if on ES they might not be equal because of other fields not included in --fields. Check out the --metadata_fields option to include further info like the ES _id", default=False)
+  ap.add_argument("-dp", "--disable_progressbar", required=False, help="turn off the progressbar visualization useful to keep track of fetching data progresses of various processes. Default to False. Set to True to simply be noticed when processes have done fetching data, without the loading progressbar.", type=bool, default=False)
   return vars(ap.parse_args())
 
 def check_meta_fields(meta_fields_str):
@@ -210,7 +211,7 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
 
   count_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
   total_hits = request_to_es(count_url, ES_COUNT_QUERY, args['user'], args['password'])['count']
-  pbar = tqdm(total=total_hits, position=process_number, leave=False, desc="Process {} - Fetching".format(process_name), ncols=150)
+  pbar = tqdm(total=total_hits, position=process_number, leave=False, desc="Process {} - Fetching".format(process_name), ncols=150) if not args['disable_progressbar'] else None
   
   fetched_data = []
 
@@ -240,13 +241,13 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
     # Process current batch of hits
     for hit in es_data['hits']['hits']:
       fetched_data.append(add_meta_fields(hit, META_FOR_EXTRACTION)) 
-      pbar.update(1)
+      if not args['disable_progressbar']: pbar.update(1)
     # Update the scroll ID
     sid = es_data['_scroll_id']
     # Get the number of results that returned in the last scroll
     scroll_size = len(es_data['hits']['hits'])
-  # log.info("Process {} has terminated".format(process_name)) # TODO remove
-
+    
+  if args['disable_progressbar']: log.info("Process {} has terminated. {} docs have been fetched.".format(process_name, total_hits))
   log.info('Process {} is creating its Pandas DataFrame...'.format(process_name))
   # df = pd.DataFrame(fetched_data, columns=args['fields'].split(','))
   df = pd.DataFrame(fetched_data, columns=DF_HEADER)
