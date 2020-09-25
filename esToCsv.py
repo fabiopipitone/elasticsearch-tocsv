@@ -3,7 +3,7 @@ from elasticsearch import RequestsHttpConnection
 from ssl import create_default_context
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import ProcessPoolExecutor
-import json, ast, code, copy, os, urllib3, hashlib, csv, sys, argparse, multiprocessing, requests, logging, math, threading, time, glob
+import json, ast, code, copy, os, urllib3, hashlib, csv, sys, argparse, multiprocessing, requests, logging, math, threading, time, glob, re
 from datetime import datetime, timedelta
 import dateutil.parser as dateparser
 from dateutil import tz
@@ -76,6 +76,8 @@ def fetch_arguments():
   ap.add_argument("-f", "--fields", required=True, help="Elasticsearch fields, passed as a string with commas between fields and no whitespaces (e.g. \"field1,field2\")")
   ap.add_argument("-mf", "--metadata_fields", required=False, help="Elasticsearch metadata fields (_index, _type, _id, _score), passed as a string with commas between fields and no whitespaces (e.g. \"_id,_index\")", default='')
   ap.add_argument("-e", "--export_path", required=False, help="path where to store the csv file. If not set, 'es_export.csv' will be used. Make sure the user who's launching the script is allowed to write to that path. WARNING: At the end of the process, unless --keep_partial is set to True, all the files with filenames \"[--export_path]_process*.csv\" will be remove. Make sure you're setting a --export_path which won't accidentally delete any other file apart from the ones created by this script", type=check_csv_valid_filename, default="es_export.csv")
+  ap.add_argument("-lbi", "--load_balance_interval", required=False, help="set this option to build process intervals by events count rather than equally spaced over time. The shorter the interval, the better the events-to-process division, the higher the heavier the computation. It cannot go below 1d if --allow_short_interval is not set. Allowed values are a number plus one of the following [m, h, d, M, y], like 1d for 1 day or 4M for 4 months. Multiprocessing must be enabled to set this option", default=None)
+  ap.add_argument("-asi", "--allow_short_interval", required=False, help="set this option to True to allow the --load_balance_interval to go below 1 day. With this option enabled the --load_balance_interval can be set up to 1 minute (1m)", default=False)
   ap.add_argument("-k", "--keep_partials", required=False, help="during the processing, various partial csv files will be created before joining them into a single csv. Set this flas to True if you want to keep also these partial files. Default to False. Notice the partial files will be kept anyway if something goes wrong during the creation of the final file.", type=bool, default=False)
   ap.add_argument("-sd", "--starting_date", required=False, help="query starting date. Must be set in iso 8601 format, without the timezone that can be specified in the --timezone option (e.g. \"YYYY-MM-ddTHH:mm:ss\")", default='now-1000y')
   ap.add_argument("-ed", "--ending_date", required=False, help="query ending date. Must be set in iso 8601 format, without the timezone that can be specified in the --timezone option (e.g. \"YYYY-MM-ddTHH:mm:ss\")", default='now+1000y')
@@ -126,6 +128,30 @@ def add_meta_fields(obj, meta_fields):
     log.critical("Something is wrong with the metadata retrieval in the following document {}. Here's the exception:\n\n{}".format(obj, e))
     os._exit(os.EX_OK)
 
+def parse_lbi(lbi, allow_short_interval, multiprocess_enabled):
+  try:
+    number = re.search("\d+", lbi).group() if re.search("\d+", lbi) != None else None
+    unit = re.search("[^\d]+", lbi).group() if re.search("[^\d]+", lbi) != None else None
+    allowed_units = ['m', 'h', 'd', 'M', 'y'] if allow_short_interval else ['d', 'M', 'y']
+    unit_in_seconds = {'m':60, 'h':3600, 'd':86400, 'M':2592000, 'y':31104000}
+    if number == None or not number.isnumeric():
+      sys.exit("--load_balance_interval option must begin with a number. Please check the --help to know how to properly set it")
+    elif unit == None or unit == '' or unit not in allowed_units:
+      sys.exit("--load_balance_interval unit must be one of the following {}. Please check the --help to know how to properly set it".format(str(allowed_units)))
+    elif not multiprocess_enabled:
+      sys.exit("Multiprocessing must be enabled (-em True) in order to set the --load_balance_interval")
+    else:
+      return int(number) * unit_in_seconds[unit]
+  except:
+    sys.exit("Something in the combination of --load_balance_interval and --allow_short_interval you set is wrong. Please check the --help to know how to properly set them")
+
+def check_valid_lbi(starting_date, ending_date, lbi):
+  sdate_in_seconds = dateparser.parse(starting_date).timestamp()
+  edate_in_seconds = dateparser.parse(ending_date).timestamp()
+  if lbi >= (edate_in_seconds - sdate_in_seconds):
+    sys.exit("You set a --load_balance_interval greater than the timestamp --starting_date - --ending_date. You might as well avoid the multiprocessing :)")
+  return True
+
 def check_arguments_conflicts(args):
   if (args['starting_date'] != 'now-1000y' or args['ending_date'] != 'now+1000y') and args['time_field'] == None:
     sys.exit("\nIf you set either a starting_date or an ending_date you have to set a --time_field to sort on, too.")
@@ -142,7 +168,11 @@ def check_arguments_conflicts(args):
   args['metadata_fields'] = check_meta_fields(args['metadata_fields'])
   args['fields_to_export'] = args['metadata_fields'] + args['fields']
 
+  args['load_balance_interval'] = parse_lbi(args['load_balance_interval'], args['allow_short_interval'], args['enable_multiprocessing'])
+  check_valid_lbi(args['starting_date'], args['ending_date'], args['load_balance_interval'])
+
   args['url_prefix'] = 'https' if args['ssl'] else 'http'
+  args['count_url'] = "{}://".format(args['url_prefix']) + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
 
   if not valid_bound_dates(args):
     sys.exit("\nThe --starting_date you set ({}) comes after the --ending_date ({}). Please set a valid time interval".format(args['starting_date'], args['ending_date']))
@@ -176,7 +206,7 @@ def check_csv_already_written(filename):
 def build_source_query(fields_of_interest):
   return  '\"_source\":' + str(fields_of_interest).replace("'",'"') + ','
 
-def build_es_query(args, starting_date, ending_date, order='asc', size=None, count_query=False, source=None):
+def build_es_query(args, starting_date, ending_date, order='asc', size=None, count_query=False, source=[]):
   QUERY_STRING = args['query_string'] #TODO chech how to properly escape internal quotes
   SIZE = ('"size": ' + str(size) + ',') if size != None else ''
   if args['time_field'] != None:
@@ -212,10 +242,9 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
   DF_HEADER = ['_id'] + args['fields_to_export'] if not '_id' in args['fields_to_export'] else args['fields_to_export']
   META_FOR_EXTRACTION = ['_id'] + args['metadata_fields'] if not '_id' in args['metadata_fields'] else args['metadata_fields']
   ES_QUERY = build_es_query(args, starting_date, ending_date, source=args['fields'])
-  ES_COUNT_QUERY = build_es_query(args, starting_date, ending_date, count_query=True, source=args['fields'])
+  ES_COUNT_QUERY = build_es_query(args, starting_date, ending_date, count_query=True)
 
-  count_url = "{}://".format(args['url_prefix']) + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
-  total_hits = request_to_es(count_url, ES_COUNT_QUERY, args['user'], args['password'])['count']
+  total_hits = request_to_es(args['count_url'], ES_COUNT_QUERY, args['user'], args['password'])['count']
   pbar = tqdm(total=total_hits, position=process_number, leave=False, desc="Process {} - Fetching".format(process_name), ncols=150) if not args['disable_progressbar'] else None
   
   fetched_data = []
@@ -321,6 +350,40 @@ def get_actual_bound_dates(args, starting_date, ending_date):
   # Return real starting_date and ending_date with proper timezone
   return [starting_date, ending_date]
 
+def make_intervals_by_load(args, processes, starting_date, ending_date):
+  starting_date, ending_date = get_actual_bound_dates(args, starting_date, ending_date)
+  total_count_query = build_es_query(args, starting_date, ending_date, count_query=True)
+  total_hits = request_to_es(args['count_url'], total_count_query, args['user'], args['password'])['count']
+  sdate_in_seconds = dateparser.parse(starting_date).timestamp()
+  edate_in_seconds = dateparser.parse(ending_date).timestamp()
+  dates_for_processes = [[], []]
+  sdate = starting_date
+  multiplier = 1
+  edate = datetime.fromtimestamp(sdate_in_seconds + multiplier * args['load_balance_interval']).astimezone(args['timezone']).isoformat()
+  pbar = tqdm(total=total_hits, position=1, leave=False, desc="Building load_weighted time intervals", ncols=150) if not args['disable_progressbar'] else None
+  while len(dates_for_processes[0]) < processes:
+    partial_count_query = build_es_query(args, sdate, edate, count_query=True) 
+    hits = request_to_es(args['count_url'], partial_count_query, args['user'], args['password'])['count']
+    if not args['disable_progressbar']: pbar.update(hits)
+    if hits >= total_hits/processes: 
+      multiplier = 1
+      dates_for_processes[0].append(sdate) 
+      dates_for_processes[1].append(edate)
+      sdate = edate
+      sdate_in_seconds = dateparser.parse(sdate).timestamp()
+      edate = datetime.fromtimestamp(sdate_in_seconds + multiplier * args['load_balance_interval']).astimezone(args['timezone']).isoformat()
+    else: 
+      multiplier += 1
+      edate = datetime.fromtimestamp(sdate_in_seconds + multiplier * args['load_balance_interval']).astimezone(args['timezone']).isoformat()
+    if dateparser.parse(edate) > dateparser.parse(ending_date):
+      final_intervals = make_time_intervals(args, processes - len(dates_for_processes[0]), sdate, ending_date)
+      return [dates_for_processes[i] + final_intervals[i] for i in range(2)]
+    if len(dates_for_processes[0]) == processes - 1:
+      dates_for_processes[0].append(sdate)
+      dates_for_processes[0].append(ending_date)
+  return dates_for_processes
+
+
 def make_time_intervals(args, processes, starting_date, ending_date):
   starting_date, ending_date = get_actual_bound_dates(args, starting_date, ending_date)
   sdate_in_seconds = dateparser.parse(starting_date).timestamp()
@@ -350,7 +413,7 @@ def main():
     processes_to_use = min(multiprocessing.cpu_count(), safe_toint_cast(args['process_number'])) if args['process_number'] != None else multiprocessing.cpu_count()
     
     # Split total time range in equals time intervals so to let each process work on a partial set of data and store the resulting list as a sublist of the lists_to_join list
-    processes_intervals = make_time_intervals(args, processes_to_use, args['starting_date'], args['ending_date'])
+    processes_intervals = make_time_intervals(args, processes_to_use, args['starting_date'], args['ending_date']) if args['load_balance_interval'] == None else make_intervals_by_load(args, processes_to_use, args['starting_date'], args['ending_date'])
 
     # Build the list of arguments to pass to the function each process will run
     process_function_arguments = [[args for i in range(processes_to_use)], *processes_intervals, [i for i in range(processes_to_use)]]
