@@ -299,7 +299,7 @@ def main():
   EXPORT_PATH = check_csv_already_written(args['export_path'])
 
   if args['enable_multiprocessing']:
-    log.info('MULTIPROCESSING ENABLED\n')
+    log.info('CONNECTION TO ES HOST ESTABLISHED -- MULTIPROCESSING ENABLED\n')
     processes_to_use = min(multiprocessing.cpu_count(), safe_toint_cast(args['process_number'])) if args['process_number'] != None else multiprocessing.cpu_count()
     lists_to_join = [[] for i in range(processes_to_use)]
     
@@ -318,7 +318,7 @@ def main():
     final_df = pd.concat(lists_to_join)
 
   else:
-    log.info('SINGLE PROCESS RUN\n')
+    log.info('CONNECTION TO ES HOST ESTABLISHED -- SINGLE PROCESS RUN\n')
     final_df = fetch_es_data(args, args['starting_date'], args['ending_date'])
 
   if args['remove_duplicates']:
