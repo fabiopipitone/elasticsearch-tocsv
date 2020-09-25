@@ -3,7 +3,7 @@ from elasticsearch import RequestsHttpConnection
 from ssl import create_default_context
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import ProcessPoolExecutor
-import json, ast, code, copy, os, urllib3, hashlib, csv, sys, argparse, multiprocessing, requests, logging, math, threading, time, glob, re
+import json, ast, code, copy, os, urllib3, hashlib, csv, sys, argparse, multiprocessing, requests, logging, math, threading, time, glob, re, random
 from datetime import datetime, timedelta
 import dateutil.parser as dateparser
 from dateutil import tz
@@ -159,9 +159,13 @@ def check_arguments_conflicts(args):
   if args['enable_multiprocessing'] and args['time_field'] == None:
     sys.exit("\nYou have to set a --time_field in order to use multiprocessing.")
 
+  args['url_prefix'] = 'https' if args['ssl'] else 'http'
+  args['count_url'] = "{}://".format(args['url_prefix']) + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
+
   args['timezone'] = check_timezone_validity(args['timezone'])
   check_valid_date(args['starting_date'])
   check_valid_date(args['ending_date'])
+  args['starting_date'], args['ending_date'] = get_actual_bound_dates(args, args['starting_date'], args['ending_date'])
 
   args['fields'] = check_fields(args['fields'])
 
@@ -170,9 +174,6 @@ def check_arguments_conflicts(args):
 
   args['load_balance_interval'] = parse_lbi(args['load_balance_interval'], args['allow_short_interval'], args['enable_multiprocessing'])
   check_valid_lbi(args['starting_date'], args['ending_date'], args['load_balance_interval'])
-
-  args['url_prefix'] = 'https' if args['ssl'] else 'http'
-  args['count_url'] = "{}://".format(args['url_prefix']) + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
 
   if not valid_bound_dates(args):
     sys.exit("\nThe --starting_date you set ({}) comes after the --ending_date ({}). Please set a valid time interval".format(args['starting_date'], args['ending_date']))
@@ -361,6 +362,7 @@ def make_intervals_by_load(args, processes, starting_date, ending_date):
   multiplier = 1
   edate = datetime.fromtimestamp(sdate_in_seconds + multiplier * args['load_balance_interval']).astimezone(args['timezone']).isoformat()
   pbar = tqdm(total=total_hits, position=1, leave=False, desc="Building load_weighted time intervals", ncols=150) if not args['disable_progressbar'] else None
+  if args['disable_progressbar']: log.info("Building load_weighted time intervals. This operation might take a while depending on the ration total_hits_counted/load_balance_interval...")
   while len(dates_for_processes[0]) < processes:
     partial_count_query = build_es_query(args, sdate, edate, count_query=True) 
     hits = request_to_es(args['count_url'], partial_count_query, args['user'], args['password'])['count']
