@@ -3,7 +3,7 @@ from elasticsearch import RequestsHttpConnection
 from ssl import create_default_context
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import ProcessPoolExecutor
-import json, ast, code, copy, os, urllib3, hashlib, csv, sys, argparse, multiprocessing, requests, logging, math, threading, time
+import json, ast, code, copy, os, urllib3, hashlib, csv, sys, argparse, multiprocessing, requests, logging, math, threading, time, glob
 from datetime import datetime, timedelta
 import dateutil.parser as dateparser
 from dateutil import tz
@@ -75,7 +75,8 @@ def fetch_arguments():
   ap.add_argument("-ho", "--host", required=False, help="Elasticsearch host. If not set, localhost will be used", default="localhost")
   ap.add_argument("-f", "--fields", required=True, help="Elasticsearch fields, passed as a string with commas between fields and no whitespaces (e.g. \"field1,field2\")")
   ap.add_argument("-mf", "--metadata_fields", required=False, help="Elasticsearch metadata fields (_index, _type, _id, _score), passed as a string with commas between fields and no whitespaces (e.g. \"_id,_index\")", default='')
-  ap.add_argument("-e", "--export_path", required=False, help="path where to store the csv file. If not set, 'es_export.csv' will be used", type=check_csv_valid_filename, default="es_export.csv")
+  ap.add_argument("-e", "--export_path", required=False, help="path where to store the csv file. If not set, 'es_export.csv' will be used. Make sure the user who's launching the script is allowed to write to that path. WARNING: At the end of the process, unless --keep_partial is set to True, all the files with filenames \"[--export_path]_process*.csv\" will be remove. Make sure you're setting a --export_path which won't accidentally delete any other file apart from the ones created by this script", type=check_csv_valid_filename, default="es_export.csv")
+  ap.add_argument("-k", "--keep_partials", required=False, help="during the processing, various partial csv files will be created before joining them into a single csv. Set this flas to True if you want to keep also these partial files. Default to False. Notice the partial files will be kept anyway if something goes wrong during the creation of the final file.", type=bool, default=False)
   ap.add_argument("-sd", "--starting_date", required=False, help="query starting date. Must be set in iso 8601 format, without the timezone that can be specified in the --timezone option (e.g. \"YYYY-MM-ddTHH:mm:ss\")", default='now-1000y')
   ap.add_argument("-ed", "--ending_date", required=False, help="query ending date. Must be set in iso 8601 format, without the timezone that can be specified in the --timezone option (e.g. \"YYYY-MM-ddTHH:mm:ss\")", default='now+1000y')
   ap.add_argument("-t", "--time_field", required=False, help="time field to query on. If not set and --starting_date or --ending_date are set and exception will be raised")
@@ -199,6 +200,8 @@ def build_es_connection(args):
 
 def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
   process_number = 0 if process_name == 'Main' else process_name
+  process_tmp_subset = 1
+  csv_partial_filename = "{}_process{}_{}.csv".format(args['export_path'][:-4], process_number, str(process_tmp_subset).zfill(5))
   log.info("Process {}: starts fetching data from {} to {}".format(process_name, starting_date, ending_date))
   ES_INSTANCE = build_es_connection(args)
   ES_INDEX = args['index']
@@ -246,11 +249,53 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
     sid = es_data['_scroll_id']
     # Get the number of results that returned in the last scroll
     scroll_size = len(es_data['hits']['hits'])
+
+    # If this process has already fetched 10M events, create the df, write the partial csv and empty the fetched_data list
+    if len(fetched_data) >= 10000000:
+        write_csv(csv_partial_filename, DF_HEADER, exception_message="Something went wrong when trying to write the partial csv {}.".format(csv_partial_filename), list_to_convert=fetched_data)
+        process_tmp_subset += 1
+        csv_partial_filename = "{}_process{}_{}.csv".format(args['export_path'][:-4], process_number, str(process_tmp_subset).zfill(5))
+        fetched_data = []
     
-  log.info("Process {} has fetched and processed {} docs. It's now creating its Pandas DataFrame...".format(process_name, total_hits))
-  df = pd.DataFrame(fetched_data, columns=DF_HEADER)
-  del fetched_data
-  return df
+  write_csv(csv_partial_filename, DF_HEADER, exception_message="Something went wrong when trying to write the partial csv {}.".format(csv_partial_filename), list_to_convert=fetched_data)
+  log.info("Process {} has fetched and processed {} docs. They've been split into {} partial csv file(s)".format(process_name, total_hits, process_tmp_subset))
+  return True
+
+def remove_duplicates(args, df):
+  try: 
+    if args['remove_duplicates']:
+      log.info('Removing possible duplicates from the dataframe...')
+      df.drop_duplicates(subset=args['fields_to_export'], inplace=True)
+    else:
+      df.drop_duplicates(subset=['_id', *args['fields_to_export']], inplace=True)
+    return df
+  except Exception as e:
+    sys.exit("Something went wrong when removing duplicates (set by user or the possible duplicates due to multiprocessing). The partial csv files won't be deleted. Here's the exception: \n\n{}".format(e))
+
+def write_csv(export_path, fields_to_export, exception_message='', df=None, list_to_convert=False):
+  df = pd.DataFrame(list_to_convert, columns=fields_to_export) if list_to_convert else df
+  try: 
+    df.to_csv(export_path, index=False, columns=fields_to_export)
+  except Exception as e:
+    sys.exit("{} Here's the exception: \n\n{}".format(exception_message, e))
+
+def join_partial_csvs(filename):
+  try: 
+    log.info('Joining partial csv files\n')
+    list_of_csvs = sorted([csv for csv in glob.glob("{}_process*.csv".format(filename))])
+    final_df = pd.concat([pd.read_csv(csv) for csv in list_of_csvs])
+    return final_df
+  except Exception as e:
+    sys.exit("Something went wrong when trying to merge partial csv files previously created. The partial csv files won't be deleted. Here's the exception: \n\n{}".format(e))
+
+def delete_partial_csvs(basic_filename):
+  try: 
+    list_of_csvs = sorted([csv for csv in glob.glob("{}_process*.csv".format(basic_filename))])
+    for csv in list_of_csvs:
+      os.remove(csv)
+    return True
+  except Exception as e:
+    sys.exit("Something went wrong when trying to delete partial csv files previously created. Here's the exception: \n\n{}".format(e))
 
 def add_timezone(date_string, timezone):
   try:
@@ -301,7 +346,6 @@ def main():
   if args['enable_multiprocessing']:
     log.info('CONNECTION TO ES HOST ESTABLISHED -- MULTIPROCESSING ENABLED\n')
     processes_to_use = min(multiprocessing.cpu_count(), safe_toint_cast(args['process_number'])) if args['process_number'] != None else multiprocessing.cpu_count()
-    lists_to_join = [[] for i in range(processes_to_use)]
     
     # Split total time range in equals time intervals so to let each process work on a partial set of data and store the resulting list as a sublist of the lists_to_join list
     processes_intervals = make_time_intervals(args, processes_to_use, args['starting_date'], args['ending_date'])
@@ -309,28 +353,30 @@ def main():
     # Build the list of arguments to pass to the function each process will run
     process_function_arguments = [[args for i in range(processes_to_use)], *processes_intervals, [i for i in range(processes_to_use)]]
     
+    processes_done = [None for i in range(processes_to_use)]
+
     # Create and start processes_to_use number of processes
     with ProcessPoolExecutor(processes_to_use) as executor:
-      [*lists_to_join] = executor.map(fetch_es_data, *process_function_arguments)
-
-    # Concat dataframes of single process into a unique dataframe
-    log.info("Concatenating single dataframes to create the final one")
-    final_df = pd.concat(lists_to_join)
-
+      processes_done = executor.map(fetch_es_data, *process_function_arguments)
   else:
     log.info('CONNECTION TO ES HOST ESTABLISHED -- SINGLE PROCESS RUN\n')
-    final_df = fetch_es_data(args, args['starting_date'], args['ending_date'])
+    fetch_es_data(args, args['starting_date'], args['ending_date'])
 
-  if args['remove_duplicates']:
-    log.info('Removing possible duplicates from the dataframe...')
-    final_df.drop_duplicates(subset=args['fields_to_export'], inplace=True)
-  else:
-    final_df.drop_duplicates(subset=['_id', *args['fields_to_export']], inplace=True)
+  while list(set(processes_done)) != [True]:
+    continue
+
+  # Joining partial csv files previously created into a single one
+  final_df = join_partial_csvs(args['export_path'][:-4])
+  
+  # Remove duplicates
+  final_df = remove_duplicates(args, final_df)
 
   # Write the CSV from the dataframe
-  log.info('Exporting Pandas DataFrame as csv...')
-  final_df.to_csv(args['export_path'], index=False, columns=args['fields_to_export'])
+  log.info('Exporting Pandas final DataFrame as {}...'.format(args['export_path']))
+  write_csv(args['export_path'], args['fields_to_export'], "Something went wrong when trying to write the final csv after the merge of the partial csv files. The partial csv files won't be deleted.", df=final_df)
 
+  # Delete partial csvs
+  if not args['keep_partials']: delete_partial_csvs(args['export_path'][:-4])
 
 if __name__ == "__main__":
   formatter = logging.Formatter("%(asctime)s -- %(message)s")
