@@ -247,10 +247,9 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
     # Get the number of results that returned in the last scroll
     scroll_size = len(es_data['hits']['hits'])
     
-  if args['disable_progressbar']: log.info("Process {} has terminated. {} docs have been fetched.".format(process_name, total_hits))
-  log.info('Process {} is creating its Pandas DataFrame...'.format(process_name))
-  # df = pd.DataFrame(fetched_data, columns=args['fields'].split(','))
+  log.info("Process {} has fetched and processed {} docs. It's now creating its Pandas DataFrame...".format(process_name, total_hits))
   df = pd.DataFrame(fetched_data, columns=DF_HEADER)
+  del fetched_data
   return df
 
 def add_timezone(date_string, timezone):
