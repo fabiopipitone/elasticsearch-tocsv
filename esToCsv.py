@@ -142,6 +142,8 @@ def check_arguments_conflicts(args):
   args['metadata_fields'] = check_meta_fields(args['metadata_fields'])
   args['fields_to_export'] = args['metadata_fields'] + args['fields']
 
+  args['url_prefix'] = 'https' if args['ssl'] else 'http'
+
   if not valid_bound_dates(args):
     sys.exit("\nThe --starting_date you set ({}) comes after the --ending_date ({}). Please set a valid time interval".format(args['starting_date'], args['ending_date']))
 
@@ -149,7 +151,7 @@ def check_arguments_conflicts(args):
 
 def test_es_connection(args):
   try:
-    url = "http://{}:{}".format(args['host'], args['port'])
+    url = "{}://{}:{}".format(args['url_prefix'], args['host'], args['port'])
     headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
     r = requests.get(url, headers=headers, auth=HTTPBasicAuth(args['user'], args['password']), timeout=10)
     if r.status_code != 200: sys.exit("Status code when trying to connect to your host at {} is not 200. Check out the reason here:\n\n{}".format(url, json.dumps(r.json(), indent=2)))
@@ -212,7 +214,7 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
   ES_QUERY = build_es_query(args, starting_date, ending_date, source=args['fields'])
   ES_COUNT_QUERY = build_es_query(args, starting_date, ending_date, count_query=True, source=args['fields'])
 
-  count_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
+  count_url = "{}://".format(args['url_prefix']) + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
   total_hits = request_to_es(count_url, ES_COUNT_QUERY, args['user'], args['password'])['count']
   pbar = tqdm(total=total_hits, position=process_number, leave=False, desc="Process {} - Fetching".format(process_name), ncols=150) if not args['disable_progressbar'] else None
   
@@ -304,7 +306,7 @@ def add_timezone(date_string, timezone):
     sys.exit("Either the --starting_date ({}) or the --ending_date ({}) you set are not in the valid iso8601 format (YYYY-MM-ddTHH:mm:ss) and the dateparser raised an exception. Please use the standard iso8601 format")
 
 def get_actual_bound_dates(args, starting_date, ending_date):
-  search_url = "http://" + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_search"
+  search_url = "{}://".format(args['url_prefix']) + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_search"
   timezone = args['timezone']
   starting_date = add_timezone(starting_date, timezone) if not starting_date == "now-1000y" else starting_date
   ending_date = add_timezone(ending_date, timezone) if not ending_date == "now+1000y" else ending_date
