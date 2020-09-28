@@ -33,7 +33,7 @@ def final_pw(args):
   pw = args['password'] if args['password'] != None else os.environ[args['secret_password']] if args['secret_password'] != None and args['secret_password'] in os.environ else ''
   if pw == '':
     pw = getpass.getpass("Enter your es instance password. If not needed, press ENTER:  ")
-  args['password'] = pw
+  return pw
 
 def add_timezone(date_string, timezone):
   try:

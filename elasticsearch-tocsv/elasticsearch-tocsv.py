@@ -80,13 +80,11 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
 
 def main():
   args = fetch_arguments()
-  check_arguments_conflicts(args)
-  final_pw(args)
+  args = check_arguments_conflicts(args)
   test_es_connection(args)
-  EXPORT_PATH = check_csv_already_written(args['export_path'])
+  check_csv_already_written(args['export_path'])
 
   log.info("################ EXTRACTING DATA ################\n")
-
 
   if args['enable_multiprocessing']:
     log.info('Connection to ES host established -- Multiprocessing enabled\n')

@@ -146,7 +146,9 @@ def check_arguments_conflicts(args):
     args['load_balance_interval'] = parse_lbi(args['load_balance_interval'], args['allow_short_interval'], args['enable_multiprocessing']) 
     check_valid_lbi(args['starting_date'], args['ending_date'], args['load_balance_interval'])
 
+  args['password'] = final_pw(args)
+
   if not valid_bound_dates(args):
     sys.exit("\nThe --starting_date you set ({}) comes after the --ending_date ({}). Please set a valid time interval".format(args['starting_date'], args['ending_date']))
 
-  return True
+  return args
