@@ -1,6 +1,3 @@
-from elasticsearch import Elasticsearch
-from elasticsearch import RequestsHttpConnection
-from ssl import create_default_context
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import ProcessPoolExecutor
 import json, ast, code, copy, os, urllib3, hashlib, csv, sys, argparse, multiprocessing, requests, logging, math, threading, time, glob, re, random
@@ -18,7 +15,6 @@ from helpers.connection_tools import *
 from helpers.arguments_checkers import *
 from utils.TqdmLoggingHandler import TqdmLoggingHandler
 from utils.CustomLogger import CustomLogger
-import getpass
 
 def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
   process_number = 0 if process_name == 'Main' else process_name
