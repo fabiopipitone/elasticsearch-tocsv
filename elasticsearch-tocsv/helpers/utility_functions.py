@@ -10,10 +10,8 @@ def build_es_query(args, starting_date, ending_date, order='asc', size=None, cou
   SIZE = ('"size": ' + str(size) + ',') if size != None else ''
   if args['time_field'] != None:
     TIME_FIELD = args['time_field']
-    FROM_DATE = starting_date if starting_date != None else "now-1000y"
-    TO_DATE = ending_date if ending_date != None else "now+1000y"
     SORT_QUERY = '"sort":[{"' + TIME_FIELD + '":{"order":"' + order + '"}}],' if not count_query else ''
-    RANGE_QUERY = ",{\"range\":{\"" + TIME_FIELD + "\":{\"gte\":\"" + FROM_DATE + "\",\"lte\":\"" + TO_DATE + "\"}}}"
+    RANGE_QUERY = ",{\"range\":{\"" + TIME_FIELD + "\":{\"gte\":\"" + starting_date + "\",\"lte\":\"" + ending_date + "\"}}}"
   else:
     SORT_QUERY = RANGE_QUERY = ''
   SOURCE_QUERY = build_source_query(source) if not source == [] and not count_query else ''
