@@ -106,12 +106,12 @@ def main():
     # Create and start processes_to_use number of processes
     with ProcessPoolExecutor(processes_to_use) as executor:
       processes_done = executor.map(fetch_es_data, *process_function_arguments)
+
+    while list(set(processes_done)) != [True]:
+      continue
   else:
     log.info('Connection to ES host established -- Single process run\n')
     fetch_es_data(args, args['starting_date'], args['ending_date'])
-
-  while list(set(processes_done)) != [True]:
-    continue
 
   # Joining partial csv files previously created into a single one
   log.info('Joining partial csv files\n')

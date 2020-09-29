@@ -16,7 +16,7 @@ def fetch_arguments():
   ap.add_argument("-k", "--keep_partials", required=False, help="during the processing, various partial csv files will be created before joining them into a single csv. Set this flas to True if you want to keep also these partial files. Default to False. Notice the partial files will be kept anyway if something goes wrong during the creation of the final file.", type=bool, default=False)
   ap.add_argument("-sd", "--starting_date", required=False, help="query starting date. Must be set in iso 8601 format, without the timezone that can be specified in the --timezone option (e.g. \"YYYY-MM-ddTHH:mm:ss\")", default='now-1000y')
   ap.add_argument("-ed", "--ending_date", required=False, help="query ending date. Must be set in iso 8601 format, without the timezone that can be specified in the --timezone option (e.g. \"YYYY-MM-ddTHH:mm:ss\")", default='now+1000y')
-  ap.add_argument("-t", "--time_field", required=False, help="time field to query on. If not set and --starting_date or --ending_date are set and exception will be raised")
+  ap.add_argument("-t", "--time_field", required=False, help="time field to query on. If not set and --starting_date or --ending_date are set and exception will be raised", default=None)
   ap.add_argument("-q", "--query_string", required=False, help="Elasticsearch query string. Put it between quotes and escape internal quotes characters (e.g. \"one_field: foo AND another_field.keyword: \\\"bar\\\"\"", default="*")
   ap.add_argument("-p", "--port", required=False, help="Elasticsearch port. If not set, the default port 9200 will be used", default=9200, type=int)
   ap.add_argument("-u", "--user", required=False, help="Elasticsearch user", default='')
@@ -135,7 +135,7 @@ def check_arguments_conflicts(args):
   args['timezone'] = check_timezone_validity(args['timezone'])
   check_valid_date(args['starting_date'])
   check_valid_date(args['ending_date'])
-  args['starting_date'], args['ending_date'] = get_actual_bound_dates(args, args['starting_date'], args['ending_date'])
+  if args['time_field'] != None: args['starting_date'], args['ending_date'] = get_actual_bound_dates(args, args['starting_date'], args['ending_date']) 
 
   args['fields'] = check_fields(args['fields'])
 
