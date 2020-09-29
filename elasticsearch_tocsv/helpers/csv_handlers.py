@@ -1,4 +1,4 @@
-import os, sys, glob, logging
+import os, sys, glob
 import pandas as pd
 
 def check_csv_already_written(filename):

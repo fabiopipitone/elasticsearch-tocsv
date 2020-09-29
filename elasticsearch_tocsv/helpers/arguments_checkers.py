@@ -1,4 +1,4 @@
-import argparse, sys, re, os, logging
+import argparse, sys, re, os
 import dateutil.parser as dateparser
 from .utility_functions import *
 from .connection_tools import *
@@ -20,8 +20,8 @@ def fetch_arguments():
   ap.add_argument("-q", "--query_string", required=False, help="Elasticsearch query string. Put it between quotes and escape internal quotes characters (e.g. \"one_field: foo AND another_field.keyword: \\\"bar\\\"\"", default="*")
   ap.add_argument("-p", "--port", required=False, help="Elasticsearch port. If not set, the default port 9200 will be used", default=9200, type=int)
   ap.add_argument("-u", "--user", required=False, help="Elasticsearch user", default='')
-  ap.add_argument("-pw", "--password", required=False, help="Elasticsearch password in clear. If set, the --secret_password will be ignored. If both this a --secret_password are not set, a prompt password will be asked anyway (leave it blank if not needed).")
-  ap.add_argument("-spw", "--secret_password", required=False, help="env var pointing the Elasticsearch password. If both this a --password are not set, a prompt password will be asked anyway (leave it blank if not needed).")
+  ap.add_argument("-pw", "--password", required=False, help="Elasticsearch password in clear. If set, the --secret_password will be ignored. If both this a --secret_password are not set, a prompt password will be asked anyway (leave it blank if not needed).", default=None)
+  ap.add_argument("-spw", "--secret_password", required=False, help="env var pointing the Elasticsearch password. If both this a --password are not set, a prompt password will be asked anyway (leave it blank if not needed).", default=None)
   ap.add_argument("-s", "--ssl", required=False, help="require ssl connection. Default to False. Set to True to enable it", type=bool, default=False)
   ap.add_argument("-c", "--cert_verification", required=False, help="require ssl certificate verification. Default to False. Set to True to enable it", type=bool, default=False)
   ap.add_argument("-i", "--index", required=True, help="Elasticsearch index pattern to query on. To use wildcard (*) put the index in quotes (e.g. \"my-indices*\")")
@@ -54,13 +54,13 @@ def valid_bound_dates(args):
     return edate > sdate
   return True
 
-def check_timezone_validity(timezone):
+def check_timezone_validity(timezone, log):
   if timezone is None:
     return tz.tzlocal()
   elif timezone in pytz.all_timezones:
     return tz.gettz(timezone)
   else:
-    logging.error("\n\nSomething is wrong with the timezone you set {}. Please set a timezone included in the pytz.all_timezones or leave it blank to set the local timezone of this machine".format(timezone))
+    log.error("\n\nSomething is wrong with the timezone you set {}. Please set a timezone included in the pytz.all_timezones or leave it blank to set the local timezone of this machine".format(timezone))
     os._exit(os.EX_OK)
 
 def check_meta_fields(meta_fields_str):
@@ -113,16 +113,17 @@ def get_actual_bound_dates(args, starting_date, ending_date):
   ending_date = add_timezone(ending_date, timezone) if not ending_date == "now+1000y" else ending_date
   # Fetch date of first element from the specified starting_date
   sdate_query = build_es_query(args, starting_date, ending_date, 'asc', 1, source=args['time_field'].split())
-  r = request_to_es(search_url, sdate_query, args['user'], args['password'])
+  r = request_to_es(search_url, sdate_query, args['log'], args['user'], args['password'])
   starting_date = add_timezone(r['hits']['hits'][0]['_source'][args['time_field']], timezone)
   # Fetch date of last element before the specified ending_date
   edate_query = build_es_query(args, starting_date, ending_date, 'desc', 1, source=args['time_field'].split())
-  r = request_to_es(search_url, edate_query, args['user'], args['password'])
+  r = request_to_es(search_url, edate_query, args['log'], args['user'], args['password'])
   ending_date = add_timezone(r['hits']['hits'][0]['_source'][args['time_field']], timezone)
   # Return real starting_date and ending_date with proper timezone
   return [starting_date, ending_date]
 
-def check_arguments_conflicts(args):
+def check_arguments_conflicts(args, log):
+  args['log'] = log
   if (args['starting_date'] != 'now-1000y' or args['ending_date'] != 'now+1000y') and args['time_field'] == None:
     sys.exit("\nIf you set either a starting_date or an ending_date you have to set a --time_field to sort on, too.")
   
@@ -132,7 +133,7 @@ def check_arguments_conflicts(args):
   args['url_prefix'] = 'https' if args['ssl'] else 'http'
   args['count_url'] = "{}://".format(args['url_prefix']) + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
 
-  args['timezone'] = check_timezone_validity(args['timezone'])
+  args['timezone'] = check_timezone_validity(args['timezone'], log)
   check_valid_date(args['starting_date'])
   check_valid_date(args['ending_date'])
   if args['time_field'] != None: args['starting_date'], args['ending_date'] = get_actual_bound_dates(args, args['starting_date'], args['ending_date']) 

@@ -10,7 +10,7 @@ from utils.CustomLogger import CustomLogger
 
 def main():
   args = fetch_arguments()
-  args = check_arguments_conflicts(args)
+  args = check_arguments_conflicts(args, log)
   test_es_connection(args)
   check_csv_already_written(args['export_path'])
 
@@ -26,10 +26,10 @@ def main():
       processes_intervals = make_time_intervals(args, processes_to_use, args['starting_date'], args['ending_date'])
     else:
       log.info("Having set the --load_balance_interval option, intervals will be created on a load basis as far as possible according to the -lbi set\n")
-      processes_intervals = make_intervals_by_load(args, processes_to_use, args['starting_date'], args['ending_date'], log)
+      processes_intervals = make_intervals_by_load(args, processes_to_use, args['starting_date'], args['ending_date'])
 
     # Build the list of arguments to pass to the function each process will run
-    process_function_arguments = [[args for i in range(processes_to_use)], *processes_intervals, [log for i in range(processes_to_use)], [i for i in range(processes_to_use)]]
+    process_function_arguments = [[args for i in range(processes_to_use)], *processes_intervals, [i for i in range(processes_to_use)]]
     
     processes_done = [None for i in range(processes_to_use)]
 
@@ -41,14 +41,14 @@ def main():
       continue
   else:
     log.info('Connection to ES host established -- Single process run\n')
-    fetch_es_data(args, args['starting_date'], args['ending_date'], log)
+    fetch_es_data(args, args['starting_date'], args['ending_date'])
 
   # Joining partial csv files previously created into a single one
   log.info('Joining partial csv files\n')
   final_df = join_partial_csvs(args['export_path'][:-4])
   
   # Remove duplicates
-  final_df = remove_duplicates(args, final_df, log)
+  final_df = remove_duplicates(args, final_df)
 
   # Write the CSV from the dataframe
   log.info('Creating the csv at the following export path --> "{}".\n'.format(args['export_path']))

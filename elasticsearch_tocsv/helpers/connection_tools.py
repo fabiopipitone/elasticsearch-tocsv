@@ -1,6 +1,6 @@
 from elasticsearch import Elasticsearch
 from elasticsearch import RequestsHttpConnection
-import requests, logging, sys, json
+import requests, sys, json
 from requests.auth import HTTPBasicAuth
 from .utility_functions import *
 from tqdm import *
@@ -16,12 +16,12 @@ def build_es_connection(args):
                           timeout=50, ssl_show_warn=False )
 
 
-def request_to_es(url, query, user='', pwd='', timeout=10):
+def request_to_es(url, query, log, user='', pwd='', timeout=10):
   headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
   try:
     r = requests.get(url, data=query, headers=headers, auth=HTTPBasicAuth(user, pwd), timeout=10).json()
   except Exception as e:
-    logging.error("\n\nSomething when wrong connecting to the ES instance. Check out the raised exception: \n\n{}".format(e))
+    log.error("\n\nSomething when wrong connecting to the ES instance. Check out the raised exception: \n\n{}".format(e))
     os._exit(os.EX_OK)
   return r
 
@@ -34,7 +34,8 @@ def test_es_connection(args):
   except Exception as e:
     sys.exit("Something went wrong when testing the connection to your host. Check your host, port and credentials. Here's the exception:\n\n{}".format(e))
 
-def fetch_es_data(args, starting_date, ending_date, log, process_name='Main'):
+def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
+  log = args['log']
   process_number = 0 if process_name == 'Main' else process_name
   process_tmp_subset = 1
   csv_partial_filename = "{}_process{}_{}.csv".format(args['export_path'][:-4], process_number, str(process_tmp_subset).zfill(5))
@@ -43,7 +44,7 @@ def fetch_es_data(args, starting_date, ending_date, log, process_name='Main'):
   meta_for_extraction = ['_id'] + args['metadata_fields'] if not '_id' in args['metadata_fields'] else args['metadata_fields']
   es_count_query = build_es_query(args, starting_date, ending_date, count_query=True)
 
-  total_hits = request_to_es(args['count_url'], es_count_query, args['user'], args['password'])['count']
+  total_hits = request_to_es(args['count_url'], es_count_query, log, args['user'], args['password'])['count']
   pbar = tqdm(total=total_hits, position=process_number, leave=False, desc="Process {} - Fetching".format(process_name), ncols=150) if not args['disable_progressbar'] else None
   
   fetched_data = []
@@ -71,14 +72,14 @@ def fetch_es_data(args, starting_date, ending_date, log, process_name='Main'):
 
   # Process current batch of hits before starting to scroll
   for hit in es_data['hits']['hits']:
-    fetched_data.append(add_meta_fields(hit, meta_for_extraction)) 
+    fetched_data.append(add_meta_fields(hit, meta_for_extraction, log)) 
 
   # Scroll and add hits to the fetched_data list
   while scroll_size > 0:
     es_data = es_instance.scroll(scroll_id=sid, scroll=scroll_timeout)
     # Process current batch of hits
     for hit in es_data['hits']['hits']:
-      fetched_data.append(add_meta_fields(hit, meta_for_extraction)) 
+      fetched_data.append(add_meta_fields(hit, meta_for_extraction, log)) 
       if not args['disable_progressbar']: pbar.update(1)
     # Update the scroll ID
     sid = es_data['_scroll_id']

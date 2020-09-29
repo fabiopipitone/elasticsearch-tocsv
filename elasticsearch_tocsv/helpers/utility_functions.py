@@ -7,7 +7,7 @@ def build_source_query(fields_of_interest):
 
 def build_es_query(args, starting_date, ending_date, order='asc', size=None, count_query=False, source=[]):
   QUERY_STRING = args['query_string'] #TODO chech how to properly escape internal quotes
-  SIZE = ('"size": ' + str(size) + ',') if size != None else ''
+  SIZE = ('"size": ' + str(size) + ',') if size != None and not count_query else ''
   if args['time_field'] != None:
     TIME_FIELD = args['time_field']
     SORT_QUERY = '"sort":[{"' + TIME_FIELD + '":{"order":"' + order + '"}}],' if not count_query else ''
@@ -18,13 +18,13 @@ def build_es_query(args, starting_date, ending_date, order='asc', size=None, cou
   ES_QUERY = '{' + SOURCE_QUERY + SIZE + SORT_QUERY + '"query":{"bool":{"must":[{"query_string":{"query":"' + QUERY_STRING + '"}}' + RANGE_QUERY + ']}}}'
   return ES_QUERY
 
-def add_meta_fields(obj, meta_fields):
+def add_meta_fields(obj, meta_fields, log=logging):
   try:
     for index, mf in enumerate(meta_fields):
       obj['_source'][mf] = obj[mf]
     return obj['_source']
   except Exception as e:
-    logging.critical("Something is wrong with the metadata retrieval in the following document {}. Here's the exception:\n\n{}".format(obj, e))
+    log.critical("Something is wrong with the metadata retrieval in the following document {}. Here's the exception:\n\n{}".format(obj, e))
     os._exit(os.EX_OK)
 
 def final_pw(args):
@@ -39,7 +39,8 @@ def add_timezone(date_string, timezone):
   except:
     sys.exit("Either the --starting_date ({}) or the --ending_date ({}) you set are not in the valid iso8601 format (YYYY-MM-ddTHH:mm:ss) and the dateparser raised an exception. Please use the standard iso8601 format")
 
-def remove_duplicates(args, df, log):
+def remove_duplicates(args, df):
+  log = args['log']
   try: 
     if args['remove_duplicates']:
       log.info('Removing possible duplicates from the dataframe')
