@@ -2,3 +2,4 @@ export_tests/
 .vscode/
 elasticsearch-tocsv/.vscode/
 .pytest_cache/
+__pycache__/
