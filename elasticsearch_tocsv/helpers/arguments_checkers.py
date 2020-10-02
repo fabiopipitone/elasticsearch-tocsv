@@ -37,7 +37,7 @@ def fetch_arguments():
 
 def check_csv_valid_filename(filename):
   if filename[-4:] != '.csv':
-    raise argparse.ArgumentTypeError("{} is not a valid path where to store the retrieved data. It must be a csv file".format(filename))
+    raise argparse.ArgumentTypeError(f"{filename} is not a valid path where to store the retrieved data. It must be a csv file")
   return filename
 
 def check_valid_date(date_string):
@@ -45,7 +45,7 @@ def check_valid_date(date_string):
     try:
       dateparser.parse(date_string)
     except:
-      sys.exit("\nThe date set ({}) is not valid".format(date_string))
+      sys.exit(f"\nThe date set ({date_string}) is not valid")
   return True
 
 def valid_bound_dates(args):
@@ -61,7 +61,7 @@ def check_timezone_validity(timezone, log):
   elif timezone in pytz.all_timezones:
     return tz.gettz(timezone)
   else:
-    log.error("\n\nSomething is wrong with the timezone you set {}. Please set a timezone included in the pytz.all_timezones or leave it blank to set the local timezone of this machine".format(timezone))
+    log.error(f"\n\nSomething is wrong with the timezone you set {timezone}. Please set a timezone included in the pytz.all_timezones or leave it blank to set the local timezone of this machine")
     os._exit(os.EX_OK)
 
 def check_meta_fields(meta_fields_str):
@@ -71,17 +71,17 @@ def check_meta_fields(meta_fields_str):
     meta_fields = meta_fields_str.split(',')
     for mf in meta_fields:
       if mf not in ['_index', '_type', '_id', '_score']:
-        sys.exit("One of your --metadata_fields {} is not allowed. Allowed metadata fields are [_index, _type, _doc, _score]. Check out the --help to know how to set them.".format(mf))
+        sys.exit(f"One of your --metadata_fields {mf} is not allowed. Allowed metadata fields are [_index, _type, _doc, _score]. Check out the --help to know how to set them.")
     return meta_fields
   except Exception as e:
-    sys.exit("Something is wrong with the --metadata_fields you set or how you set them. Check out the --help to know how to set them. Here's the exception:\n\n{}".format(e))
+    sys.exit(f"Something is wrong with the --metadata_fields you set or how you set them. Check out the --help to know how to set them. Here's the exception:\n\n{e}")
 
 def check_fields(fields_str):
   try:
     fields = fields_str.split(',')
     return fields
   except Exception as e:
-    sys.exit("Something is wrong with the --fields you set. Check out the --help to know how to set them. Here's the exception:\n\n{}".format(e))
+    sys.exit(f"Something is wrong with the --fields you set. Check out the --help to know how to set them. Here's the exception:\n\n{e}")
 
 def parse_lbi(lbi, allow_short_interval, multiprocess_enabled):
   try:
@@ -92,7 +92,7 @@ def parse_lbi(lbi, allow_short_interval, multiprocess_enabled):
     if number == None or not number.isnumeric():
       sys.exit("--load_balance_interval option must begin with a number. Please check the --help to know how to properly set it")
     elif unit == None or unit == '' or unit not in allowed_units:
-      sys.exit("--load_balance_interval unit must be one of the following {}. Please check the --help to know how to properly set it".format(str(allowed_units)))
+      sys.exit(f"--load_balance_interval unit must be one of the following {allowed_units}. Please check the --help to know how to properly set it")
     elif not multiprocess_enabled:
       sys.exit("Multiprocessing must be enabled (-em True) in order to set the --load_balance_interval")
     else:
@@ -108,7 +108,7 @@ def check_valid_lbi(starting_date, ending_date, lbi):
   return True
 
 def get_actual_bound_dates(args, starting_date, ending_date):
-  search_url = "{}://".format(args['url_prefix']) + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_search"
+  search_url = "{url_prefix}://{host}:{port}/{index}/_search".format(**args)
   timezone = args['timezone']
   starting_date = add_timezone(starting_date, timezone) if not starting_date == "now-1000y" else starting_date
   ending_date = add_timezone(ending_date, timezone) if not ending_date == "now+1000y" else ending_date
@@ -134,7 +134,7 @@ def check_arguments_conflicts(args, log):
   if args['batch_size'] >= args['partial_csv_size']: sys.exit(f"\n--partial_csv_size ({args['partial_csv_size']}) must be greater than --batch_size ({args['batch_size']})")
 
   args['url_prefix'] = 'https' if args['ssl'] else 'http'
-  args['count_url'] = "{}://".format(args['url_prefix']) + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
+  args['count_url'] = "{url_prefix}://{host}:{port}/{index}/_count".format(**args)
 
   args['timezone'] = check_timezone_validity(args['timezone'], log)
   check_valid_date(args['starting_date'])
@@ -153,6 +153,6 @@ def check_arguments_conflicts(args, log):
   args['password'] = final_pw(args)
 
   if not valid_bound_dates(args):
-    sys.exit("\nThe --starting_date you set ({}) comes after the --ending_date ({}). Please set a valid time interval".format(args['starting_date'], args['ending_date']))
+    sys.exit(f"\nThe --starting_date you set ({args['starting_date']}) comes after the --ending_date ({args['ending_date']}). Please set a valid time interval")
 
   return args

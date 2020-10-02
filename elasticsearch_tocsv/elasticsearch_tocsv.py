@@ -51,7 +51,7 @@ def main():
   final_df = remove_duplicates(args, final_df)
 
   # Write the CSV from the dataframe
-  log.info('Creating the csv at the following export path --> "{}".\n'.format(args['export_path']))
+  log.info(f'Creating the csv at the following export path --> {args["export_path"]}.\n')
   write_csv(args['export_path'], args['fields_to_export'], "Something went wrong when trying to write the final csv after the merge of the partial csv files. The partial csv files won't be deleted.", df=final_df)
 
   # Delete partial csvs

@@ -24,7 +24,7 @@ def add_meta_fields(obj, meta_fields, log=logging):
       obj['_source'][mf] = obj[mf]
     return obj['_source']
   except Exception as e:
-    log.critical("Something is wrong with the metadata retrieval in the following document {}. Here's the exception:\n\n{}".format(obj, e))
+    log.critical(f"Something is wrong with the metadata retrieval in the following document {obj}. Here's the exception:\n\n{e}")
     os._exit(os.EX_OK)
 
 def final_pw(args):
@@ -37,7 +37,7 @@ def add_timezone(date_string, timezone):
   try:
     return dateparser.parse(date_string).astimezone(timezone).isoformat()
   except:
-    sys.exit("Either the --starting_date ({}) or the --ending_date ({}) you set are not in the valid iso8601 format (YYYY-MM-ddTHH:mm:ss) and the dateparser raised an exception. Please use the standard iso8601 format")
+    sys.exit(f"The date you set ({date_string}) (either --starting_date or --ending_date) is not in the valid iso8601 format (YYYY-MM-ddTHH:mm:ss) and the dateparser raised an exception. Please use the standard iso8601 format")
 
 def remove_duplicates(args, df):
   log = args['log']
@@ -49,4 +49,4 @@ def remove_duplicates(args, df):
       df.drop_duplicates(subset=['_id', *args['fields_to_export']], inplace=True)
     return df
   except Exception as e:
-    sys.exit("Something went wrong when removing duplicates (set by user or the possible duplicates due to multiprocessing). The partial csv files won't be deleted. Here's the exception: \n\n{}".format(e))
+    sys.exit(f"Something went wrong when removing duplicates (set by user or the possible duplicates due to multiprocessing). The partial csv files won't be deleted. Here's the exception: \n\n{e}")

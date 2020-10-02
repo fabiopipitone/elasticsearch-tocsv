@@ -21,31 +21,31 @@ def request_to_es(url, query, log, user='', pwd='', timeout=10):
   try:
     r = requests.get(url, data=query, headers=headers, auth=HTTPBasicAuth(user, pwd), timeout=10).json()
   except Exception as e:
-    log.error("\n\nSomething when wrong connecting to the ES instance. Check out the raised exception: \n\n{}".format(e))
+    log.error(f"\n\nSomething when wrong connecting to the ES instance. Check out the raised exception: \n\n{e}")
     os._exit(os.EX_OK)
   return r
 
 def test_es_connection(args):
   try:
-    url = "{}://{}:{}".format(args['url_prefix'], args['host'], args['port'])
+    url = "{url_prefix}://{host}:{port}".format(**args)
     headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
     r = requests.get(url, headers=headers, auth=HTTPBasicAuth(args['user'], args['password']), timeout=10)
-    if r.status_code != 200: sys.exit("Status code when trying to connect to your host at {} is not 200. Check out the reason here:\n\n{}".format(url, json.dumps(r.json(), indent=2)))
+    if r.status_code != 200: sys.exit(f"Status code when trying to connect to your host at {url} is not 200. Check out the reason here:\n\n{json.dumps(r.json(), indent=2)}")
   except Exception as e:
-    sys.exit("Something went wrong when testing the connection to your host. Check your host, port and credentials. Here's the exception:\n\n{}".format(e))
+    sys.exit(f"Something went wrong when testing the connection to your host. Check your host, port and credentials. Here's the exception:\n\n{e}")
 
 def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
   log = args['log']
   process_number = 0 if process_name == 'Main' else process_name
   process_tmp_subset = 1
-  csv_partial_filename = "{}_process{}_{}.csv".format(args['export_path'][:-4], process_number, str(process_tmp_subset).zfill(5))
-  log.info("Process {}: starts fetching data from {} to {}".format(process_name, starting_date, ending_date))
+  csv_partial_filename = f"{args['export_path'][:-4]}_process{process_number}_{str(process_tmp_subset).zfill(5)}.csv"
+  log.info(f"Process {process_name}: starts fetching data from {starting_date} to {ending_date}")
   df_header = ['_id'] + args['fields_to_export'] if not '_id' in args['fields_to_export'] else args['fields_to_export']
   meta_for_extraction = ['_id'] + args['metadata_fields'] if not '_id' in args['metadata_fields'] else args['metadata_fields']
   es_count_query = build_es_query(args, starting_date, ending_date, count_query=True)
 
   total_hits = request_to_es(args['count_url'], es_count_query, log, args['user'], args['password'])['count']
-  pbar = tqdm(total=total_hits, position=process_number, leave=False, desc="Process {} - Fetching".format(process_name), ncols=150) if not args['disable_progressbar'] else None
+  pbar = tqdm(total=total_hits, position=process_number, leave=False, desc=f"Process {process_name} - Fetching", ncols=150) if not args['disable_progressbar'] else None
   
   fetched_data = []
 
@@ -63,7 +63,7 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
       body = es_query
     )
   except Exception as e:
-    log.error("\Process {}: something went wrong when fetching the data from Elasticsearch. Please check your connection parameters. Here's the raised exception: \n\n{}".format(process_name, e))
+    log.error(f"\nProcess {process_name}: something went wrong when fetching the data from Elasticsearch. Please check your connection parameters. Here's the raised exception: \n\n{e}")
     os._exit(os.EX_OK)
   
   # Save parameters for scrolling
@@ -88,11 +88,11 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
 
     # If this process has already fetched 10M events, create the df, write the partial csv and empty the fetched_data list
     if len(fetched_data) >= args['partial_csv_size']:
-        write_csv(csv_partial_filename, df_header, exception_message="Something went wrong when trying to write the partial csv {}.".format(csv_partial_filename), list_to_convert=fetched_data)
+        write_csv(csv_partial_filename, df_header, exception_message=f"Something went wrong when trying to write the partial csv {csv_partial_filename}.", list_to_convert=fetched_data)
         process_tmp_subset += 1
-        csv_partial_filename = "{}_process{}_{}.csv".format(args['export_path'][:-4], process_number, str(process_tmp_subset).zfill(5))
+        csv_partial_filename = f"{args['export_path'][:-4]}_process{process_number}_{str(process_tmp_subset).zfill(5)}.csv"
         fetched_data = []
     
-  write_csv(csv_partial_filename, df_header, exception_message="Something went wrong when trying to write the partial csv {}.".format(csv_partial_filename), list_to_convert=fetched_data)
-  log.info("Process {} has fetched and processed {} docs. They've been split into {} partial csv file(s)".format(process_name, total_hits, process_tmp_subset))
+  write_csv(csv_partial_filename, df_header, exception_message=f"Something went wrong when trying to write the partial csv {csv_partial_filename}.", list_to_convert=fetched_data)
+  log.info(f"Process {process_name} has fetched and processed {total_hits} docs. They've been split into {process_tmp_subset} partial csv file(s)")
   return True
