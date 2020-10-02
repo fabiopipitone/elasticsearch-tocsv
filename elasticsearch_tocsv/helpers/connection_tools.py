@@ -87,7 +87,7 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
     scroll_size = len(es_data['hits']['hits'])
 
     # If this process has already fetched 10M events, create the df, write the partial csv and empty the fetched_data list
-    if len(fetched_data) >= 10000000:
+    if len(fetched_data) >= args['partial_csv_size']:
         write_csv(csv_partial_filename, df_header, exception_message="Something went wrong when trying to write the partial csv {}.".format(csv_partial_filename), list_to_convert=fetched_data)
         process_tmp_subset += 1
         csv_partial_filename = "{}_process{}_{}.csv".format(args['export_path'][:-4], process_number, str(process_tmp_subset).zfill(5))

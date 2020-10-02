@@ -9,6 +9,7 @@ def fetch_arguments():
   ap = argparse.ArgumentParser()
   ap.add_argument("-ho", "--host", required=False, help="Elasticsearch host. If not set, localhost will be used", default="localhost")
   ap.add_argument("-f", "--fields", required=True, help="Elasticsearch fields, passed as a string with commas between fields and no whitespaces (e.g. \"field1,field2\")")
+  ap.add_argument("-pcs", "--partial_csv_size", required=False, help="Max number of rows of partial csv files created by a single process. Default to 10000000. The higher the number of fields to extract, the lower this number should be not to keep too many data in memory. If set, must be greater than --batch_size (default 5000)", type=int, default=10000000)
   ap.add_argument("-mf", "--metadata_fields", required=False, help="Elasticsearch metadata fields (_index, _type, _id, _score), passed as a string with commas between fields and no whitespaces (e.g. \"_id,_index\")", default='')
   ap.add_argument("-e", "--export_path", required=False, help="path where to store the csv file. If not set, 'es_export.csv' will be used. Make sure the user who's launching the script is allowed to write to that path. WARNING: At the end of the process, unless --keep_partial is set to True, all the files with filenames \"[--export_path]_process*.csv\" will be remove. Make sure you're setting a --export_path which won't accidentally delete any other file apart from the ones created by this script", type=check_csv_valid_filename, default="es_export.csv")
   ap.add_argument("-lbi", "--load_balance_interval", required=False, help="set this option to build process intervals by events count rather than equally spaced over time. The shorter the interval, the better the events-to-process division, the higher the heavier the computation. It cannot go below 1d if --allow_short_interval is not set. Allowed values are a number plus one of the following [m, h, d, M, y], like 1d for 1 day or 4M for 4 months. Multiprocessing must be enabled to set this option", default=None)
@@ -129,6 +130,8 @@ def check_arguments_conflicts(args, log):
   
   if args['enable_multiprocessing'] and args['time_field'] == None:
     sys.exit("\nYou have to set a --time_field in order to use multiprocessing.")
+
+  if args['batch_size'] >= args['partial_csv_size']: sys.exit(f"\n--partial_csv_size ({args['partial_csv_size']}) must be greater than --batch_size ({args['batch_size']})")
 
   args['url_prefix'] = 'https' if args['ssl'] else 'http'
   args['count_url'] = "{}://".format(args['url_prefix']) + args['host'] + ":" + str(args['port']) + "/" + args['index'] + "/_count"
