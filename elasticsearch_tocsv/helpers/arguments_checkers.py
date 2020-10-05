@@ -133,6 +133,8 @@ def check_arguments_conflicts(args, log):
 
   if args['batch_size'] >= args['partial_csv_size']: sys.exit(f"\n--partial_csv_size ({args['partial_csv_size']}) must be greater than --batch_size ({args['batch_size']})")
 
+  args['password'] = final_pw(args)
+
   args['url_prefix'] = 'https' if args['ssl'] else 'http'
   args['count_url'] = "{url_prefix}://{host}:{port}/{index}/_count".format(**args)
 
@@ -149,8 +151,6 @@ def check_arguments_conflicts(args, log):
   if args['load_balance_interval'] != None: 
     args['load_balance_interval'] = parse_lbi(args['load_balance_interval'], args['allow_short_interval'], args['enable_multiprocessing']) 
     check_valid_lbi(args['starting_date'], args['ending_date'], args['load_balance_interval'])
-
-  args['password'] = final_pw(args)
 
   if not valid_bound_dates(args):
     sys.exit(f"\nThe --starting_date you set ({args['starting_date']}) comes after the --ending_date ({args['ending_date']}). Please set a valid time interval")
