@@ -50,3 +50,14 @@ def remove_duplicates(args, df):
     return df
   except Exception as e:
     sys.exit(f"Something went wrong when removing duplicates (set by user or the possible duplicates due to multiprocessing). The partial csv files won't be deleted. Here's the exception: \n\n{e}")
+
+def aggregate_fields(filename, fields_as_string, agg_type):
+  try:
+    df = pd.read_csv(filename)
+    aggregation_fields = fields_as_string.split(',')
+    for field in df.columns.values.tolist():
+      if field not in aggregation_fields: df.drop(columns=[field], inplace=True)
+    df['estocsv_count'] = 1
+    return df.groupby(aggregation_fields).agg(agg_type)
+  except Exception as e:
+    sys.exit(f"Something went wrong when trying to aggregate the raw documents on the fields passed {fields_as_string}. Here's the exception: \n\n{e}")

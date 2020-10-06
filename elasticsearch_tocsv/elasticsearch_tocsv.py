@@ -28,6 +28,9 @@ def main():
       log.info("Having set the --load_balance_interval option, intervals will be created on a load basis as far as possible according to the -lbi set\n")
       processes_intervals = make_intervals_by_load(args, processes_to_use, args['starting_date'], args['ending_date'])
 
+    # Check if to create aggregated csv file
+    log.info(aggregation_log(args['export_path_agg'], args['aggregation_fields'], args['aggregation_type']))
+
     # Build the list of arguments to pass to the function each process will run
     process_function_arguments = [[args for i in range(processes_to_use)], *processes_intervals, [i for i in range(processes_to_use)]]
     
@@ -41,6 +44,10 @@ def main():
       continue
   else:
     log.info('Connection to ES host established -- Single process run\n')
+
+    # Check if to create aggregated csv file
+    log.info(aggregation_log(args['export_path_agg'], args['aggregation_fields'], args['aggregation_type']))
+    
     fetch_es_data(args, args['starting_date'], args['ending_date'])
 
   # Joining partial csv files previously created into a single one
@@ -55,10 +62,16 @@ def main():
   write_csv(args['export_path'], args['fields_to_export'], "Something went wrong when trying to write the final csv after the merge of the partial csv files. The partial csv files won't be deleted.", df=final_df)
 
   # Delete partial csvs
-
   if not args['keep_partials']: 
     log.info('Deleting partial csv files\n')
     delete_partial_csvs(args['export_path'][:-4])
+
+  # Create aggregation file if needed
+  if args['aggregation_fields'] != None:
+    log.info('Creating the csv file with aggregated data\n')
+    aggregated_df = aggregate_fields(args['export_path'], args['aggregation_fields'], args['aggregation_type'])
+    filename = args['export_path_agg']
+    write_csv(filename, ['estocsv_count'], f'Something when wrong when trying to write the aggregated dataframe to {filename}.', df=aggregated_df, index=True)
 
   log.info("################ EXITING SUCCESSFULLY ################\n")
 

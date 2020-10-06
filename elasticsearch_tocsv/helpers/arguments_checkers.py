@@ -7,6 +7,8 @@ import pytz
 
 def fetch_arguments():
   ap = argparse.ArgumentParser()
+  ap.add_argument("-af", "--aggregation_fields", required=False, help="set this option if you want to generate an additional file (raw exports file will still be generated) containing the info aggregated according to specific fields. Specify the fields to aggregate on as a string with commas between fields and no whitespaces (e.g. \"field1,field2\")", default=None)
+  ap.add_argument("-at", "--aggregation_type", required=False, help="aggregation function to use when generating the aggregated csv file. Default is 'count'. It can be one of the following: ['count', 'min', 'max', 'mean', 'sum']. This option requires the --aggregation_fields to be set.", default='count')
   ap.add_argument("-asi", "--allow_short_interval", required=False, help="set this option to True to allow the --load_balance_interval to go below 1 day. With this option enabled the --load_balance_interval can be set up to 1 minute (1m)", default=False)
   ap.add_argument("-b", "--batch_size", required=False, help="batch size for the scroll API. Default to 5000. Max 10000. Increasing it might impact the ES instance heap memory. If you want to set a value greater than 10000, you must set the max_result_window elasticsearch property accordingly first. Please check out the elasticsearch documentation before increasing that value on the specified index --> https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules.html", type=int, default=5000)
   ap.add_argument("-c", "--cert_verification", required=False, help="require ssl certificate verification. Default to False. Set to True to enable it", type=bool, default=False)
@@ -47,6 +49,12 @@ def check_valid_date(date_string):
     except:
       sys.exit(f"\nThe date set ({date_string}) is not valid")
   return True
+
+def aggregation_log(filename, aggregation_fields, aggregation_type):
+  if aggregation_fields is None:
+    return "No --aggregation_fields value has been set. Aggregated csv file won't be created\n"
+  else:
+    return f"A file \"{filename}\" will be created according to the value of --aggregation_fields ({aggregation_fields}) and --aggregation_type ({aggregation_type})\n"
 
 def valid_bound_dates(args):
   if args['starting_date'] != 'now-1000y' and args['ending_date'] != 'now+1000y':
@@ -104,8 +112,12 @@ def check_valid_lbi(starting_date, ending_date, lbi):
   sdate_in_seconds = dateparser.parse(starting_date).timestamp()
   edate_in_seconds = dateparser.parse(ending_date).timestamp()
   if lbi >= (edate_in_seconds - sdate_in_seconds):
-    sys.exit("You set a --load_balance_interval greater than the timestamp --starting_date - --ending_date. You might as well avoid the multiprocessing :)")
+    sys.exit("You set a --load_balance_interval greater than the timespan [--starting_date - --ending_date]. You might as well avoid the multiprocessing :)")
   return True
+
+def check_valid_aggregations(aggregation_type):
+  if aggregation_type.strip().lower() not in ['sum', 'count', 'max', 'min', 'mean']: sys.exit(f"Aggregation function you set ({aggregation_type}) is not a valid one. It must be one of ['count', 'min', 'max', 'mean', 'sum']")
+  return aggregation_type.strip().lower()
 
 def get_actual_bound_dates(args, starting_date, ending_date):
   search_url = "{url_prefix}://{host}:{port}/{index}/_search".format(**args)
@@ -128,6 +140,8 @@ def check_arguments_conflicts(args, log):
   if (args['starting_date'] != 'now-1000y' or args['ending_date'] != 'now+1000y') and args['time_field'] == None:
     sys.exit("\nIf you set either a starting_date or an ending_date you have to set a --time_field to sort on, too.")
   
+  args['aggregation_type'] = check_valid_aggregations(args['aggregation_type'])
+
   if args['enable_multiprocessing'] and args['time_field'] == None:
     sys.exit("\nYou have to set a --time_field in order to use multiprocessing.")
 
@@ -147,6 +161,7 @@ def check_arguments_conflicts(args, log):
 
   args['metadata_fields'] = check_meta_fields(args['metadata_fields'])
   args['fields_to_export'] = args['metadata_fields'] + args['fields']
+  args['export_path_agg'] = args['export_path'][:-4] + '_aggregated.csv'
 
   if args['load_balance_interval'] != None: 
     args['load_balance_interval'] = parse_lbi(args['load_balance_interval'], args['allow_short_interval'], args['enable_multiprocessing']) 
