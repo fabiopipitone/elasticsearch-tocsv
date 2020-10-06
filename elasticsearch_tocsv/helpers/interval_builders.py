@@ -16,7 +16,7 @@ def make_intervals_by_load(args, processes, starting_date, ending_date):
   sdate = starting_date
   multiplier = 1
   edate = datetime.fromtimestamp(sdate_in_seconds + multiplier * args['load_balance_interval']).astimezone(args['timezone']).isoformat()
-  pbar = tqdm(total=total_hits, position=1, leave=False, desc="Building load_weighted time intervals", ncols=150) if not args['disable_progressbar'] else None
+  pbar = tqdm(total=total_hits, position=1, leave=False, desc="Building load_weighted time intervals", ncols=150, mininterval=0.05) if not args['disable_progressbar'] else None
   if args['disable_progressbar']: log.info("Building load_weighted time intervals. This operation might take a while depending on the ration total_hits_counted/load_balance_interval...")
   while len(dates_for_processes[0]) < processes:
     partial_count_query = build_es_query(args, sdate, edate, count_query=True) 
