@@ -5,7 +5,7 @@ with open("README.rst", "r") as fh:
 
 setup(
   name='elasticsearch-tocsv',
-  version='0.0.1',
+  version='0.0.3',
   author='Fabio Pipitone',
   author_email='fabio.pipitone93@gmail.com',
   url='https://github.com/fabiopipitone/elasticsearch-tocsv',
@@ -19,13 +19,13 @@ setup(
       'elasticsearch_tocsv = elasticsearch_tocsv.elasticsearch_tocsv:main',
     ]
   },
-  classifiers =( 
+  classifiers = [ 
     "Programming Language :: Python :: 3", 
-    "License :: OSI Approved :: GNU General Public License v2", 
-    "Operating System :: Linux", 
-  ),
+    "License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)", 
+    "Operating System :: OS Independent", 
+  ],
   keywords='elasticsearch, export, csv, report, kibana, elasticsearch-py',
   install_requires=['requests>==2.22.0', 'elasticsearch>=7.9.1', 'tqdm>=4.49.0', 'pandas>=1.1.2', 'pytz>=2020.1'],
-  python_requires='>=3.5, <4',
+  python_requires='>=3.8, <4',
   zip_safe = False
 )

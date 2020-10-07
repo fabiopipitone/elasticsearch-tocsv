@@ -18,6 +18,6 @@ In order to install and use the elasticsearch-tocsv tool, you need to install th
 Installation
 ------------
 
-Install the ``elasticsearch`` package with `pip <https://pypi.org/project/elasticsearchtocsv>`_:
+Install the ``elasticsearch-tocsv`` package with:
 
-    $ python -m pip install elasticsearchtocsv
+    $ pip3 install elasticsearch-tocsv

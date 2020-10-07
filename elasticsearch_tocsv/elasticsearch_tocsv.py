@@ -1,12 +1,12 @@
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
-from helpers.csv_handlers import *
-from helpers.utility_functions import *
-from helpers.interval_builders import *
-from helpers.connection_tools import *
-from helpers.arguments_checkers import *
-from utils.TqdmLoggingHandler import TqdmLoggingHandler
-from utils.CustomLogger import CustomLogger
+from elasticsearch_tocsv.helpers.csv_handlers import *
+from elasticsearch_tocsv.helpers.utility_functions import *
+from elasticsearch_tocsv.helpers.interval_builders import *
+from elasticsearch_tocsv.helpers.connection_tools import *
+from elasticsearch_tocsv.helpers.arguments_checkers import *
+from elasticsearch_tocsv.utils.TqdmLoggingHandler import TqdmLoggingHandler
+from elasticsearch_tocsv.utils.CustomLogger import CustomLogger
 
 def main():
   log = CustomLogger(__name__).logger
