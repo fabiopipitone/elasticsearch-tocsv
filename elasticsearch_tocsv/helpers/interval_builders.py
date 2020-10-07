@@ -1,9 +1,9 @@
 import dateutil.parser as dateparser
 from datetime import datetime, timedelta
-from helpers.utility_functions import *
-from helpers.connection_tools import *
+from .utility_functions import *
+from .connection_tools import *
 from tqdm import *
-from helpers.arguments_checkers import get_actual_bound_dates
+from .arguments_checkers import get_actual_bound_dates
 
 def make_intervals_by_load(args, processes, starting_date, ending_date):
   log = args['log']

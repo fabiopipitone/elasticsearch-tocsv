@@ -1,7 +1,7 @@
 import argparse, sys, re, os
 import dateutil.parser as dateparser
-from helpers.utility_functions import *
-from helpers.connection_tools import *
+from .utility_functions import *
+from .connection_tools import *
 from dateutil import tz
 import pytz
 

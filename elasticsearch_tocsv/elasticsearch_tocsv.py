@@ -9,6 +9,7 @@ from utils.TqdmLoggingHandler import TqdmLoggingHandler
 from utils.CustomLogger import CustomLogger
 
 def main():
+  log = CustomLogger(__name__).logger
   args = fetch_arguments()
   args = check_arguments_conflicts(args, log)
   test_es_connection(args)
@@ -76,6 +77,5 @@ def main():
   log.info("################ EXITING SUCCESSFULLY ################\n")
 
 if __name__ == "__main__":
-  log = CustomLogger(__name__).logger
   main()
 

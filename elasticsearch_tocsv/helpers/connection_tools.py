@@ -2,9 +2,9 @@ from elasticsearch import Elasticsearch
 from elasticsearch import RequestsHttpConnection
 import requests, sys, json
 from requests.auth import HTTPBasicAuth
-from helpers.utility_functions import *
+from .utility_functions import *
 from tqdm import *
-from helpers.csv_handlers import *
+from .csv_handlers import *
 
 def build_es_connection(args):
   return Elasticsearch( hosts=[{'host': args['host'], 'port': args['port']}],
