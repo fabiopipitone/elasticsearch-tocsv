@@ -1,5 +1,5 @@
 from concurrent.futures import ProcessPoolExecutor
-import multiprocessing
+import multiprocessing, urllib3
 from elasticsearch_tocsv.helpers.csv_handlers import *
 from elasticsearch_tocsv.helpers.utility_functions import *
 from elasticsearch_tocsv.helpers.interval_builders import *
@@ -11,6 +11,10 @@ from elasticsearch_tocsv.utils.CustomLogger import CustomLogger
 def main():
   log = CustomLogger(__name__).logger
   args = fetch_arguments()
+
+  if not args['cert_verification']:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
   args = check_arguments_conflicts(args, log)
   test_es_connection(args)
   check_csv_already_written(args['export_path'])

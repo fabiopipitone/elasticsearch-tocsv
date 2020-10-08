@@ -11,15 +11,15 @@ def fetch_arguments():
   ap.add_argument("-at", "--aggregation_type", required=False, help="aggregation function to use when generating the aggregated csv file. Default is 'count'. It can be one of the following: ['count', 'min', 'max', 'mean', 'sum']. This option requires the --aggregation_fields to be set.", default='count')
   ap.add_argument("-asi", "--allow_short_interval", required=False, help="set this option to True to allow the --load_balance_interval to go below 1 day. With this option enabled the --load_balance_interval can be set up to 1 minute (1m)", default=False)
   ap.add_argument("-b", "--batch_size", required=False, help="batch size for the scroll API. Default to 5000. Max 10000. Increasing it might impact the ES instance heap memory. If you want to set a value greater than 10000, you must set the max_result_window elasticsearch property accordingly first. Please check out the elasticsearch documentation before increasing that value on the specified index --> https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules.html", type=int, default=5000)
-  ap.add_argument("-c", "--cert_verification", required=False, help="require ssl certificate verification. Default to False. Set to True to enable it", type=bool, default=False)
-  ap.add_argument("-dp", "--disable_progressbar", required=False, help="turn off the progressbar visualization useful to keep track of fetching data progresses of various processes. Default to False. Set to True to simply be noticed when processes have done fetching data, without the loading progressbar.", type=bool, default=False)
+  ap.add_argument("-c", "--cert_verification", required=False, help="require ssl certificate verification. Default to False. Set to True to enable it", type=real_bool, default=False)
+  ap.add_argument("-dp", "--disable_progressbar", required=False, help="turn off the progressbar visualization useful to keep track of fetching data progresses of various processes. Default to False. Set to True to simply be noticed when processes have done fetching data, without the loading progressbar.", type=real_bool, default=False)
   ap.add_argument("-e", "--export_path", required=False, help="path where to store the csv file. If not set, 'es_export.csv' will be used. Make sure the user who's launching the script is allowed to write to that path. WARNING: At the end of the process, unless --keep_partial is set to True, all the files with filenames \"[--export_path]_process*.csv\" will be remove. Make sure you're setting a --export_path which won't accidentally delete any other file apart from the ones created by this script", type=check_csv_valid_filename, default="es_export.csv")
   ap.add_argument("-ed", "--ending_date", required=False, help="query ending date. Must be set in iso 8601 format, without the timezone that can be specified in the --timezone option (e.g. \"YYYY-MM-ddTHH:mm:ss\")", default='now+1000y')
-  ap.add_argument("-em", "--enable_multiprocessing", required=False, help="enable the multiprocess options. Default to False. Set to True to exploit multiprocessing. If set to True a --time_field to sort on must be set or an exception will be raised", type=bool, default=False)
+  ap.add_argument("-em", "--enable_multiprocessing", required=False, help="enable the multiprocess options. Default to False. Set to True to exploit multiprocessing. If set to True a --time_field to sort on must be set or an exception will be raised", type=real_bool, default=False)
   ap.add_argument("-f", "--fields", required=True, help="Elasticsearch fields, passed as a string with commas between fields and no whitespaces (e.g. \"field1,field2\")")
   ap.add_argument("-ho", "--host", required=False, help="Elasticsearch host. If not set, localhost will be used", default="localhost")
   ap.add_argument("-i", "--index", required=True, help="Elasticsearch index pattern to query on. To use wildcard (*) put the index in quotes (e.g. \"my-indices*\")")
-  ap.add_argument("-k", "--keep_partials", required=False, help="during the processing, various partial csv files will be created before joining them into a single csv. Set this flas to True if you want to keep also these partial files. Default to False. Notice the partial files will be kept anyway if something goes wrong during the creation of the final file.", type=bool, default=False)
+  ap.add_argument("-k", "--keep_partials", required=False, help="during the processing, various partial csv files will be created before joining them into a single csv. Set this flas to True if you want to keep also these partial files. Default to False. Notice the partial files will be kept anyway if something goes wrong during the creation of the final file.", type=real_bool, default=False)
   ap.add_argument("-lbi", "--load_balance_interval", required=False, help="set this option to build process intervals by events count rather than equally spaced over time. The shorter the interval, the better the events-to-process division, the higher the heavier the computation. It cannot go below 1d if --allow_short_interval is not set. Allowed values are a number plus one of the following [m, h, d, M, y], like 1d for 1 day or 4M for 4 months. Multiprocessing must be enabled to set this option", default=None)
   ap.add_argument("-mf", "--metadata_fields", required=False, help="Elasticsearch metadata fields (_index, _type, _id, _score), passed as a string with commas between fields and no whitespaces (e.g. \"_id,_index\")", default='')
   ap.add_argument("-o", "--scroll_timeout", required=False, help="scroll window timeout. Default to 4m", default='4m')
@@ -29,7 +29,7 @@ def fetch_arguments():
   ap.add_argument("-pw", "--password", required=False, help="Elasticsearch password in clear. If set, the --secret_password will be ignored. If both this a --secret_password are not set, a prompt password will be asked anyway (leave it blank if not needed).", default=None)
   ap.add_argument("-q", "--query_string", required=False, help="Elasticsearch query string. Put it between quotes and escape internal quotes characters (e.g. \"one_field: foo AND another_field.keyword: \\\"bar\\\"\"", default="*")
   ap.add_argument("-rd", "--remove_duplicates", required=False, help="set to True to remove all duplicated events. Default to False. WARNING: two events with the same values of the fields specified in --fields will be considered duplicated and then unified even if on ES they might not be equal because of other fields not included in --fields. Check out the --metadata_fields option to include further info like the ES _id", default=False)
-  ap.add_argument("-s", "--ssl", required=False, help="require ssl connection. Default to False. Set to True to enable it", type=bool, default=False)
+  ap.add_argument("-s", "--ssl", required=False, help="require ssl connection. Default to False. Set to True to enable it", type=real_bool, default=False)
   ap.add_argument("-sd", "--starting_date", required=False, help="query starting date. Must be set in iso 8601 format, without the timezone that can be specified in the --timezone option (e.g. \"YYYY-MM-ddTHH:mm:ss\")", default='now-1000y')
   ap.add_argument("-spw", "--secret_password", required=False, help="env var pointing the Elasticsearch password. If both this a --password are not set, a prompt password will be asked anyway (leave it blank if not needed).", default=None)
   ap.add_argument("-t", "--time_field", required=False, help="time field to query on. If not set and --starting_date or --ending_date are set and exception will be raised", default=None)
@@ -41,6 +41,10 @@ def check_csv_valid_filename(filename):
   if filename[-4:] != '.csv':
     raise argparse.ArgumentTypeError(f"{filename} is not a valid path where to store the retrieved data. It must be a csv file")
   return filename
+
+def real_bool(stringified_bool):
+  if stringified_bool.lower().strip() not in ['true', 'false']: raise argparse.ArgumentTypeError(f"{stringified_bool} must be a bool type. Plase insert 'true' or 'false'")
+  return True if stringified_bool.lower().strip() == 'true' else False
 
 def check_valid_date(date_string):
   if (date_string != "now-1000y" and date_string != "now+1000y"):
@@ -126,11 +130,11 @@ def get_actual_bound_dates(args, starting_date, ending_date):
   ending_date = add_timezone(ending_date, timezone) if not ending_date == "now+1000y" else ending_date
   # Fetch date of first element from the specified starting_date
   sdate_query = build_es_query(args, starting_date, ending_date, 'asc', 1, source=args['time_field'].split())
-  r = request_to_es(search_url, sdate_query, args['log'], args['user'], args['password'])
+  r = request_to_es(search_url, sdate_query, args['log'], args['user'], args['password'], verification=args['cert_verification'])
   starting_date = add_timezone(r['hits']['hits'][0]['_source'][args['time_field']], timezone)
   # Fetch date of last element before the specified ending_date
   edate_query = build_es_query(args, starting_date, ending_date, 'desc', 1, source=args['time_field'].split())
-  r = request_to_es(search_url, edate_query, args['log'], args['user'], args['password'])
+  r = request_to_es(search_url, edate_query, args['log'], args['user'], args['password'], verification=args['cert_verification'])
   ending_date = add_timezone(r['hits']['hits'][0]['_source'][args['time_field']], timezone)
   # Return real starting_date and ending_date with proper timezone
   return [starting_date, ending_date]

@@ -16,10 +16,10 @@ def build_es_connection(args):
                           timeout=50, ssl_show_warn=False )
 
 
-def request_to_es(url, query, log, user='', pwd='', timeout=10):
+def request_to_es(url, query, log, user='', pwd='', timeout=10, verification=False):
   headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
   try:
-    r = requests.get(url, data=query, headers=headers, auth=HTTPBasicAuth(user, pwd), timeout=10).json()
+    r = requests.get(url, data=query, headers=headers, auth=HTTPBasicAuth(user, pwd), timeout=10, verify=verification).json()
   except Exception as e:
     log.error(f"\n\nSomething when wrong connecting to the ES instance. Check out the raised exception: \n\n{e}")
     os._exit(os.EX_OK)
@@ -29,7 +29,7 @@ def test_es_connection(args):
   try:
     url = "{url_prefix}://{host}:{port}".format(**args)
     headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
-    r = requests.get(url, headers=headers, auth=HTTPBasicAuth(args['user'], args['password']), timeout=10)
+    r = requests.get(url, headers=headers, auth=HTTPBasicAuth(args['user'], args['password']), timeout=10, verify=args['cert_verification'])
     if r.status_code != 200: sys.exit(f"Status code when trying to connect to your host at {url} is not 200. Check out the reason here:\n\n{json.dumps(r.json(), indent=2)}")
   except Exception as e:
     sys.exit(f"Something went wrong when testing the connection to your host. Check your host, port and credentials. Here's the exception:\n\n{e}")
@@ -44,7 +44,7 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
   meta_for_extraction = ['_id'] + args['metadata_fields'] if not '_id' in args['metadata_fields'] else args['metadata_fields']
   es_count_query = build_es_query(args, starting_date, ending_date, count_query=True)
 
-  total_hits = request_to_es(args['count_url'], es_count_query, log, args['user'], args['password'])['count']
+  total_hits = request_to_es(args['count_url'], es_count_query, log, args['user'], args['password'], verification=args['cert_verification'])['count']
   pbar = tqdm(total=total_hits, position=process_number, leave=False, desc=f"Process {process_name} - Fetching", ncols=150, mininterval=0.05) if not args['disable_progressbar'] else None
   
   fetched_data = []

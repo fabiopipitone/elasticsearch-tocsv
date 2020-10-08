@@ -9,7 +9,7 @@ def make_intervals_by_load(args, processes, starting_date, ending_date):
   log = args['log']
   starting_date, ending_date = get_actual_bound_dates(args, starting_date, ending_date)
   total_count_query = build_es_query(args, starting_date, ending_date, count_query=True)
-  total_hits = request_to_es(args['count_url'], total_count_query, log, args['user'], args['password'])['count']
+  total_hits = request_to_es(args['count_url'], total_count_query, log, args['user'], args['password'], verification=args['cert_verification'])['count']
   sdate_in_seconds = dateparser.parse(starting_date).timestamp()
   edate_in_seconds = dateparser.parse(ending_date).timestamp()
   dates_for_processes = [[], []]
@@ -20,7 +20,7 @@ def make_intervals_by_load(args, processes, starting_date, ending_date):
   if args['disable_progressbar']: log.info("Building load_weighted time intervals. This operation might take a while depending on the ration total_hits_counted/load_balance_interval...")
   while len(dates_for_processes[0]) < processes:
     partial_count_query = build_es_query(args, sdate, edate, count_query=True) 
-    hits = request_to_es(args['count_url'], partial_count_query, log, args['user'], args['password'])['count']
+    hits = request_to_es(args['count_url'], partial_count_query, log, args['user'], args['password'], verification=args['cert_verification'])['count']
     if not args['disable_progressbar']: pbar.update(hits)
     if hits >= total_hits/processes: 
       multiplier = 1
