@@ -1,6 +1,8 @@
 from elasticsearch import Elasticsearch
 from elasticsearch import RequestsHttpConnection
+from requests.exceptions import SSLError as RequestsSSLError
 import requests, sys, json
+from ssl import create_default_context
 from requests.auth import HTTPBasicAuth
 from .utility_functions import *
 from tqdm import *
@@ -10,8 +12,8 @@ def build_es_connection(args):
   return Elasticsearch( hosts=[{'host': args['host'], 'port': args['port']}],
                           connection_class=RequestsHttpConnection,
                           http_auth=(args['user'], args['password']),
-                          use_ssl=args['ssl'],
-                          verify_certs=args['cert_verification'],
+                          scheme=args['url_prefix'],
+                          verify_certs=args['verify'],
                           retry_on_timeout=True,
                           timeout=50, ssl_show_warn=False )
 
@@ -25,14 +27,39 @@ def request_to_es(url, query, log, user='', pwd='', timeout=10, verification=Fal
     os._exit(os.EX_OK)
   return r
 
-def test_es_connection(args):
+def test_es_connection(args, log):
   try:
     url = "{url_prefix}://{host}:{port}".format(**args)
     headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
-    r = requests.get(url, headers=headers, auth=HTTPBasicAuth(args['user'], args['password']), timeout=10, verify=args['cert_verification'])
+    check_valid_certificate_combinations(args, log)
+    r = requests.get(url, headers=headers, auth=HTTPBasicAuth(args['user'], args['password']), timeout=10, verify=args['verify'])
     if r.status_code != 200: sys.exit(f"Status code when trying to connect to your host at {url} is not 200. Check out the reason here:\n\n{json.dumps(r.json(), indent=2)}")
   except Exception as e:
-    sys.exit(f"Something went wrong when testing the connection to your host. Check your host, port and credentials. Here's the exception:\n\n{e}")
+    sys.exit(f"Something went wrong when testing the connection to your host. Check your host, port, credentials and certificates (if not ignored). Check your ES instance is still running, too. Here's the exception:\n\n{e}")
+
+def check_valid_certificate_combinations(args, log):
+  if args['cert_verification'] is True and args['certificate_path'] == '':
+    log.warning(f"You set --cert_verification to True but no --certificate_path to fetch a local certificate. If the certificate of the ES instance you are trying to connect to doesn't have a root CA in its CA chain (e.g. self-signed certificate) the validation is going to fail.\n")
+    test_certificate(args, "You didn't set a path to a certificate yet you required a certificate verification. You sure your ES instance has a certificate signed by a valid root CA? ")
+  elif args['cert_verification'] is True:
+    test_certificate(args, f"There's a mismatch between the certificate you passed ({args['certificate_path']}) and the one of the ES instance. ")
+  elif args['ssl'] is True and args['cert_verification'] is False:
+    print("\nYou're connecting to a ES instance over SSL but without any certificate verification. Be sure you know the risks (e.g. MITM attack).")
+    proceed_without_cert_verification = ''
+    while proceed_without_cert_verification not in ['y', 'n']:
+      proceed_without_cert_verification = input(f"\nDo you want to proceed? (y/n)").lower().strip()
+      if proceed_without_cert_verification == 'n':
+        sys.exit("\nExiting script. No connection to the host has been established.")
+      elif proceed_without_cert_verification != 'y':
+        print("\nSorry, I can't understand the answer. Please answer with 'y' or 'n'")
+
+def test_certificate(args, exception=''):
+  try: 
+    url = "{url_prefix}://{host}:{port}".format(**args)
+    headers = {'content-type': 'application/json', 'Accept-Charset': 'UTF-8'}
+    r = requests.get(url, headers=headers, auth=HTTPBasicAuth(args['user'], args['password']), timeout=10, verify=args['verify'])
+  except RequestsSSLError as e:
+    sys.exit(f"Something's wrong with the certificate validation. {exception}You can work around the problem ignoring the certificate verification (-c False) but check out MITM attack risks first. Here's the exception:\n\n{e}")
 
 def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
   log = args['log']
@@ -44,7 +71,7 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
   meta_for_extraction = ['_id'] + args['metadata_fields'] if not '_id' in args['metadata_fields'] else args['metadata_fields']
   es_count_query = build_es_query(args, starting_date, ending_date, count_query=True)
 
-  total_hits = request_to_es(args['count_url'], es_count_query, log, args['user'], args['password'], verification=args['cert_verification'])['count']
+  total_hits = request_to_es(args['count_url'], es_count_query, log, args['user'], args['password'], verification=args['certificate_path'])['count']
   pbar = tqdm(total=total_hits, position=process_number, leave=False, desc=f"Process {process_name} - Fetching", ncols=150, mininterval=0.05) if not args['disable_progressbar'] else None
   
   fetched_data = []
@@ -63,7 +90,7 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
       body = es_query
     )
   except Exception as e:
-    log.error(f"\nProcess {process_name}: something went wrong when fetching the data from Elasticsearch. Please check your connection parameters. Here's the raised exception: \n\n{e}")
+    log.error(f"Process {process_name}: something went wrong when fetching the data from Elasticsearch. Please check your connection parameters. Here's the raised exception: \n\n{e}")
     os._exit(os.EX_OK)
   
   # Save parameters for scrolling

@@ -12,6 +12,7 @@ def fetch_arguments():
   ap.add_argument("-asi", "--allow_short_interval", required=False, help="set this option to True to allow the --load_balance_interval to go below 1 day. With this option enabled the --load_balance_interval can be set up to 1 minute (1m)", default=False)
   ap.add_argument("-b", "--batch_size", required=False, help="batch size for the scroll API. Default to 5000. Max 10000. Increasing it might impact the ES instance heap memory. If you want to set a value greater than 10000, you must set the max_result_window elasticsearch property accordingly first. Please check out the elasticsearch documentation before increasing that value on the specified index --> https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules.html", type=int, default=5000)
   ap.add_argument("-c", "--cert_verification", required=False, help="require ssl certificate verification. Default to False. Set to True to enable it", type=real_bool, default=False)
+  ap.add_argument("-cp", "--certificate_path", required=False, help="path to the certificate to verify the instance certificate against", default='')
   ap.add_argument("-dp", "--disable_progressbar", required=False, help="turn off the progressbar visualization useful to keep track of fetching data progresses of various processes. Default to False. Set to True to simply be noticed when processes have done fetching data, without the loading progressbar.", type=real_bool, default=False)
   ap.add_argument("-e", "--export_path", required=False, help="path where to store the csv file. If not set, 'es_export.csv' will be used. Make sure the user who's launching the script is allowed to write to that path. WARNING: At the end of the process, unless --keep_partial is set to True, all the files with filenames \"[--export_path]_process*.csv\" will be remove. Make sure you're setting a --export_path which won't accidentally delete any other file apart from the ones created by this script", type=check_csv_valid_filename, default="es_export.csv")
   ap.add_argument("-ed", "--ending_date", required=False, help="query ending date. Must be set in iso 8601 format, without the timezone that can be specified in the --timezone option (e.g. \"YYYY-MM-ddTHH:mm:ss\")", default='now+1000y')
@@ -43,7 +44,7 @@ def check_csv_valid_filename(filename):
   return filename
 
 def real_bool(stringified_bool):
-  if stringified_bool.lower().strip() not in ['true', 'false']: raise argparse.ArgumentTypeError(f"{stringified_bool} must be a bool type. Plase insert 'true' or 'false'")
+  if stringified_bool.lower().strip() not in ['true', 'false']: raise argparse.ArgumentTypeError(f"{stringified_bool} must be a bool type. Please insert 'true' or 'false'")
   return True if stringified_bool.lower().strip() == 'true' else False
 
 def check_valid_date(date_string):
@@ -130,11 +131,11 @@ def get_actual_bound_dates(args, starting_date, ending_date):
   ending_date = add_timezone(ending_date, timezone) if not ending_date == "now+1000y" else ending_date
   # Fetch date of first element from the specified starting_date
   sdate_query = build_es_query(args, starting_date, ending_date, 'asc', 1, source=args['time_field'].split())
-  r = request_to_es(search_url, sdate_query, args['log'], args['user'], args['password'], verification=args['cert_verification'])
+  r = request_to_es(search_url, sdate_query, args['log'], args['user'], args['password'], verification=args['certificate_path'])
   starting_date = add_timezone(r['hits']['hits'][0]['_source'][args['time_field']], timezone)
   # Fetch date of last element before the specified ending_date
   edate_query = build_es_query(args, starting_date, ending_date, 'desc', 1, source=args['time_field'].split())
-  r = request_to_es(search_url, edate_query, args['log'], args['user'], args['password'], verification=args['cert_verification'])
+  r = request_to_es(search_url, edate_query, args['log'], args['user'], args['password'], verification=args['certificate_path'])
   ending_date = add_timezone(r['hits']['hits'][0]['_source'][args['time_field']], timezone)
   # Return real starting_date and ending_date with proper timezone
   return [starting_date, ending_date]
@@ -144,6 +145,7 @@ def check_arguments_conflicts(args, log):
   if (args['starting_date'] != 'now-1000y' or args['ending_date'] != 'now+1000y') and args['time_field'] == None:
     sys.exit("\nIf you set either a starting_date or an ending_date you have to set a --time_field to sort on, too.")
   
+  args['verify'] = False if args['cert_verification'] is False else True if args['certificate_path'] == '' else args['certificate_path']
   args['aggregation_type'] = check_valid_aggregations(args['aggregation_type'])
 
   if args['enable_multiprocessing'] and args['time_field'] == None:
@@ -151,9 +153,11 @@ def check_arguments_conflicts(args, log):
 
   if args['batch_size'] >= args['partial_csv_size']: sys.exit(f"\n--partial_csv_size ({args['partial_csv_size']}) must be greater than --batch_size ({args['batch_size']})")
 
-  args['password'] = final_pw(args)
-
+  args['password'] = final_pw(args, log)
+  
   args['url_prefix'] = 'https' if args['ssl'] else 'http'
+
+  test_es_connection(args, log)
   args['count_url'] = "{url_prefix}://{host}:{port}/{index}/_count".format(**args)
 
   args['timezone'] = check_timezone_validity(args['timezone'], log)

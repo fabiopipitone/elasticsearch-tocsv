@@ -27,10 +27,11 @@ def add_meta_fields(obj, meta_fields, log=logging):
     log.critical(f"Something is wrong with the metadata retrieval in the following document {obj}. Here's the exception:\n\n{e}")
     os._exit(os.EX_OK)
 
-def final_pw(args):
+def final_pw(args, log):
   pw = args['password'] if args['password'] != None else os.environ[args['secret_password']] if args['secret_password'] != None and args['secret_password'] in os.environ else ''
   if pw == '':
     pw = getpass.getpass("Enter your es instance password. If not needed, press ENTER:  ")
+  if args['user'] == '' and pw != '': log.warning('You set a password but not a user. "Well, that\'s not something you see everyday" [cit.]. If something goes wrong with the authentication, this warning might ring a bell :)')
   return pw
 
 def add_timezone(date_string, timezone):

@@ -9,7 +9,7 @@ def check_csv_already_written(filename):
     if overwrite_file == 'n':
       sys.exit("\nExiting script not to overwrite the file. No query has been run.")
     elif overwrite_file != 'y':
-      print("Please answer with 'y' or 'n'")
+      print("Sorry, I can't understand the answer. Please answer with 'y' or 'n'")
   return filename
 
 def write_csv(export_path, fields_to_export, exception_message='', df=None, list_to_convert=False, index=False):
