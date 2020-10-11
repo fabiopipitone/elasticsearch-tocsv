@@ -2,6 +2,7 @@ import argparse, sys, re, os
 import dateutil.parser as dateparser
 from .utility_functions import *
 from .connection_tools import *
+from .color_wrappers import *
 from dateutil import tz
 import pytz
 
@@ -40,11 +41,11 @@ def fetch_arguments():
 
 def check_csv_valid_filename(filename):
   if filename[-4:] != '.csv':
-    raise argparse.ArgumentTypeError(f"{filename} is not a valid path where to store the retrieved data. It must be a csv file")
+    raise argparse.ArgumentTypeError(wrap_red(f"{filename} is not a valid path where to store the retrieved data. It must be a csv file"))
   return filename
 
 def real_bool(stringified_bool):
-  if stringified_bool.lower().strip() not in ['true', 'false']: raise argparse.ArgumentTypeError(f"{stringified_bool} must be a bool type. Please insert 'true' or 'false'")
+  if stringified_bool.lower().strip() not in ['true', 'false']: raise argparse.ArgumentTypeError(wrap_red(f"{stringified_bool} must be a bool type. Please insert 'true' or 'false'"))
   return True if stringified_bool.lower().strip() == 'true' else False
 
 def check_valid_date(date_string):
@@ -52,14 +53,14 @@ def check_valid_date(date_string):
     try:
       dateparser.parse(date_string)
     except:
-      sys.exit(f"\nThe date set ({date_string}) is not valid")
+      sys.exit(wrap_red(f"\nThe date set ({date_string}) is not valid"))
   return True
 
 def aggregation_log(filename, aggregation_fields, aggregation_type):
   if aggregation_fields is None:
-    return "No --aggregation_fields value has been set. Aggregated csv file won't be created\n"
+    return wrap_blue("No --aggregation_fields value has been set. Aggregated csv file won't be created\n")
   else:
-    return f"A file \"{filename}\" will be created according to the value of --aggregation_fields ({aggregation_fields}) and --aggregation_type ({aggregation_type})\n"
+    return wrap_blue(f"A file \"{filename}\" will be created according to the value of --aggregation_fields ({aggregation_fields}) and --aggregation_type ({aggregation_type})\n")
 
 def valid_bound_dates(args):
   if args['starting_date'] != 'now-1000y' and args['ending_date'] != 'now+1000y':
@@ -74,7 +75,7 @@ def check_timezone_validity(timezone, log):
   elif timezone in pytz.all_timezones:
     return tz.gettz(timezone)
   else:
-    log.error(f"\n\nSomething is wrong with the timezone you set {timezone}. Please set a timezone included in the pytz.all_timezones or leave it blank to set the local timezone of this machine")
+    log.error(wrap_red(f"\n\nSomething is wrong with the timezone you set {timezone}. Please set a timezone included in the pytz.all_timezones or leave it blank to set the local timezone of this machine"))
     os._exit(os.EX_OK)
 
 def check_meta_fields(meta_fields_str):
@@ -84,17 +85,17 @@ def check_meta_fields(meta_fields_str):
     meta_fields = meta_fields_str.split(',')
     for mf in meta_fields:
       if mf not in ['_index', '_type', '_id', '_score']:
-        sys.exit(f"One of your --metadata_fields {mf} is not allowed. Allowed metadata fields are [_index, _type, _doc, _score]. Check out the --help to know how to set them.")
+        sys.exit(wrap_red(f"One of your --metadata_fields {mf} is not allowed. Allowed metadata fields are [_index, _type, _doc, _score]. Check out the --help to know how to set them."))
     return meta_fields
   except Exception as e:
-    sys.exit(f"Something is wrong with the --metadata_fields you set or how you set them. Check out the --help to know how to set them. Here's the exception:\n\n{e}")
+    sys.exit(wrap_red(f"Something is wrong with the --metadata_fields you set or how you set them. Check out the --help to know how to set them. Here's the exception:\n\n{e}"))
 
 def check_fields(fields_str):
   try:
     fields = fields_str.split(',')
     return fields
   except Exception as e:
-    sys.exit(f"Something is wrong with the --fields you set. Check out the --help to know how to set them. Here's the exception:\n\n{e}")
+    sys.exit(wrap_red(f"Something is wrong with the --fields you set. Check out the --help to know how to set them. Here's the exception:\n\n{e}"))
 
 def parse_lbi(lbi, allow_short_interval, multiprocess_enabled):
   try:
@@ -103,25 +104,25 @@ def parse_lbi(lbi, allow_short_interval, multiprocess_enabled):
     allowed_units = ['m', 'h', 'd', 'M', 'y'] if allow_short_interval else ['d', 'M', 'y']
     unit_in_seconds = {'m':60, 'h':3600, 'd':86400, 'M':2592000, 'y':31104000}
     if number == None or not number.isnumeric():
-      sys.exit("--load_balance_interval option must begin with a number. Please check the --help to know how to properly set it")
+      sys.exit(wrap_red("--load_balance_interval option must begin with a number. Please check the --help to know how to properly set it"))
     elif unit == None or unit == '' or unit not in allowed_units:
-      sys.exit(f"--load_balance_interval unit must be one of the following {allowed_units}. Please check the --help to know how to properly set it")
+      sys.exit(wrap_red(f"--load_balance_interval unit must be one of the following {allowed_units}. Please check the --help to know how to properly set it"))
     elif not multiprocess_enabled:
-      sys.exit("Multiprocessing must be enabled (-em True) in order to set the --load_balance_interval")
+      sys.exit(wrap_red("Multiprocessing must be enabled (-em True) in order to set the --load_balance_interval"))
     else:
       return int(number) * unit_in_seconds[unit]
   except:
-    sys.exit("Something in the combination of --load_balance_interval and --allow_short_interval you set is wrong. Please check the --help to know how to properly set them")
+    sys.exit(wrap_red("Something in the combination of --load_balance_interval and --allow_short_interval you set is wrong. Please check the --help to know how to properly set them"))
 
 def check_valid_lbi(starting_date, ending_date, lbi):
   sdate_in_seconds = dateparser.parse(starting_date).timestamp()
   edate_in_seconds = dateparser.parse(ending_date).timestamp()
   if lbi >= (edate_in_seconds - sdate_in_seconds):
-    sys.exit("You set a --load_balance_interval greater than the timespan [--starting_date - --ending_date]. You might as well avoid the multiprocessing :)")
+    sys.exit(wrap_red("You set a --load_balance_interval greater than the timespan [--starting_date - --ending_date]. You might as well avoid the multiprocessing :)"))
   return True
 
 def check_valid_aggregations(aggregation_type):
-  if aggregation_type.strip().lower() not in ['sum', 'count', 'max', 'min', 'mean']: sys.exit(f"Aggregation function you set ({aggregation_type}) is not a valid one. It must be one of ['count', 'min', 'max', 'mean', 'sum']")
+  if aggregation_type.strip().lower() not in ['sum', 'count', 'max', 'min', 'mean']: sys.exit(wrap_red(f"Aggregation function you set ({aggregation_type}) is not a valid one. It must be one of ['count', 'min', 'max', 'mean', 'sum']"))
   return aggregation_type.strip().lower()
 
 def get_actual_bound_dates(args, starting_date, ending_date):
@@ -143,15 +144,15 @@ def get_actual_bound_dates(args, starting_date, ending_date):
 def check_arguments_conflicts(args, log):
   args['log'] = log
   if (args['starting_date'] != 'now-1000y' or args['ending_date'] != 'now+1000y') and args['time_field'] == None:
-    sys.exit("\nIf you set either a starting_date or an ending_date you have to set a --time_field to sort on, too.")
+    sys.exit(wrap_red("\nIf you set either a starting_date or an ending_date you have to set a --time_field to sort on, too."))
   
   args['verify'] = False if args['cert_verification'] is False else True if args['certificate_path'] == '' else args['certificate_path']
   args['aggregation_type'] = check_valid_aggregations(args['aggregation_type'])
 
   if args['enable_multiprocessing'] and args['time_field'] == None:
-    sys.exit("\nYou have to set a --time_field in order to use multiprocessing.")
+    sys.exit(wrap_red("\nYou have to set a --time_field in order to use multiprocessing."))
 
-  if args['batch_size'] >= args['partial_csv_size']: sys.exit(f"\n--partial_csv_size ({args['partial_csv_size']}) must be greater than --batch_size ({args['batch_size']})")
+  if args['batch_size'] >= args['partial_csv_size']: sys.exit(wrap_red(f"\n--partial_csv_size ({args['partial_csv_size']}) must be greater than --batch_size ({args['batch_size']})"))
 
   args['password'] = final_pw(args, log)
   
@@ -176,6 +177,6 @@ def check_arguments_conflicts(args, log):
     check_valid_lbi(args['starting_date'], args['ending_date'], args['load_balance_interval'])
 
   if not valid_bound_dates(args):
-    sys.exit(f"\nThe --starting_date you set ({args['starting_date']}) comes after the --ending_date ({args['ending_date']}). Please set a valid time interval")
+    sys.exit(wrap_red(f"\nThe --starting_date you set ({args['starting_date']}) comes after the --ending_date ({args['ending_date']}). Please set a valid time interval"))
 
   return args

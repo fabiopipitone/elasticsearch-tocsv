@@ -1,6 +1,7 @@
 import os, logging, getpass, sys
 import dateutil.parser as dateparser
 import pandas as pd
+from .color_wrappers import *
 
 def build_source_query(fields_of_interest):
   return  '\"_source\":' + str(fields_of_interest).replace("'",'"') + ','
@@ -24,33 +25,33 @@ def add_meta_fields(obj, meta_fields, log=logging):
       obj['_source'][mf] = obj[mf]
     return obj['_source']
   except Exception as e:
-    log.critical(f"Something is wrong with the metadata retrieval in the following document {obj}. Here's the exception:\n\n{e}")
+    log.critical(wrap_red(f"Something is wrong with the metadata retrieval in the following document {obj}. Here's the exception:\n\n{e}"))
     os._exit(os.EX_OK)
 
 def final_pw(args, log):
   pw = args['password'] if args['password'] != None else os.environ[args['secret_password']] if args['secret_password'] != None and args['secret_password'] in os.environ else ''
   if pw == '':
     pw = getpass.getpass("Enter your es instance password. If not needed, press ENTER:  ")
-  if args['user'] == '' and pw != '': log.warning('You set a password but not a user. "Well, that\'s not something you see everyday" [cit.]. If something goes wrong with the authentication, this warning might ring a bell :)')
+  if args['user'] == '' and pw != '': log.warning(wrap_orange('You set a password but not a user. You either forgot to set the user or you set a useless password. If something goes wrong with the authentication, this warning might ring a bell :)'))
   return pw
 
 def add_timezone(date_string, timezone):
   try:
     return dateparser.parse(date_string).astimezone(timezone).isoformat()
   except:
-    sys.exit(f"The date you set ({date_string}) (either --starting_date or --ending_date) is not in the valid iso8601 format (YYYY-MM-ddTHH:mm:ss) and the dateparser raised an exception. Please use the standard iso8601 format")
+    sys.exit(wrap_red(f"The date you set ({date_string}) (either --starting_date or --ending_date) is not in the valid iso8601 format (YYYY-MM-ddTHH:mm:ss) and the dateparser raised an exception. Please use the standard iso8601 format"))
 
 def remove_duplicates(args, df):
   log = args['log']
   try: 
     if args['remove_duplicates']:
-      log.info('Removing possible duplicates from the dataframe')
+      log.info(wrap_blue('Removing possible duplicates from the dataframe'))
       df.drop_duplicates(subset=args['fields_to_export'], inplace=True)
     else:
       df.drop_duplicates(subset=['_id', *args['fields_to_export']], inplace=True)
     return df
   except Exception as e:
-    sys.exit(f"Something went wrong when removing duplicates (set by user or the possible duplicates due to multiprocessing). The partial csv files won't be deleted. Here's the exception: \n\n{e}")
+    sys.exit(wrap_red(f"Something went wrong when removing duplicates (set by user or the possible duplicates due to multiprocessing). The partial csv files won't be deleted. Here's the exception: \n\n{e}"))
 
 def aggregate_fields(filename, fields_as_string, agg_type):
   try:
@@ -61,4 +62,4 @@ def aggregate_fields(filename, fields_as_string, agg_type):
     df['estocsv_count'] = 1
     return df.groupby(aggregation_fields).agg(agg_type)
   except Exception as e:
-    sys.exit(f"Something went wrong when trying to aggregate the raw documents on the fields passed {fields_as_string}. Here's the exception: \n\n{e}")
+    sys.exit(wrap_red(f"Something went wrong when trying to aggregate the raw documents on the fields passed {fields_as_string}. Here's the exception: \n\n{e}"))
