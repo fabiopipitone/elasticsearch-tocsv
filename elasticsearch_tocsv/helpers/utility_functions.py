@@ -28,6 +28,25 @@ def add_meta_fields(obj, meta_fields, log=logging):
     log.critical(wrap_red(f"Something is wrong with the metadata retrieval in the following document {obj}. Here's the exception:\n\n{e}"))
     os._exit(os.EX_OK)
 
+def nf_in_object(nested_field_name, obj):
+  for name_part in nested_field_name:
+    if name_part not in obj: return False
+    obj = obj[name_part]
+  return obj
+
+def clean_object(obj, nested_fields):
+  for nf in nested_fields:
+    obj.pop(nf[0], None)
+  return obj
+
+def denest(fields, obj):
+  nested_fields = [field.split('.') for field in fields if '.' in field]
+  for nested_field in nested_fields:
+    nf_value = nf_in_object(nested_field, obj)
+    if nf_value: obj['.'.join(nested_field)] = nf_value
+  obj = clean_object(obj, nested_fields)
+  return obj
+
 def final_pw(args, log):
   pw = args['password'] if args['password'] != None else os.environ[args['secret_password']] if args['secret_password'] != None and args['secret_password'] in os.environ else ''
   if pw == '':

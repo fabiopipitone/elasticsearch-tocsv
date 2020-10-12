@@ -100,14 +100,14 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
 
   # Process current batch of hits before starting to scroll
   for hit in es_data['hits']['hits']:
-    fetched_data.append(add_meta_fields(hit, meta_for_extraction, log)) 
+    fetched_data.append(denest(args['fields'], add_meta_fields(hit, meta_for_extraction, log))) 
 
   # Scroll and add hits to the fetched_data list
   while scroll_size > 0:
     es_data = es_instance.scroll(scroll_id=sid, scroll=scroll_timeout)
     # Process current batch of hits
     for hit in es_data['hits']['hits']:
-      fetched_data.append(add_meta_fields(hit, meta_for_extraction, log)) 
+      fetched_data.append(denest(args['fields'], dd_meta_fields(hit, meta_for_extraction, log))) 
       if not args['disable_progressbar']: pbar.update(1)
     # Update the scroll ID
     sid = es_data['_scroll_id']
