@@ -73,7 +73,7 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
   es_count_query = build_es_query(args, starting_date, ending_date, count_query=True)
 
   total_hits = request_to_es(args['count_url'], es_count_query, log, args['user'], args['password'], verification=args['certificate_path'])['count']
-  pbar = tqdm(total=total_hits, position=process_number, leave=True, desc=f"Process {process_name} - Fetching", ncols=150, mininterval=0.05) if not args['disable_progressbar'] else None
+  pbar = tqdm(total=total_hits, position=process_number, leave=False, desc=f"Process {process_name} - Fetching", ncols=150, mininterval=0.05) if not args['disable_progressbar'] else None
   
   fetched_data = []
 
