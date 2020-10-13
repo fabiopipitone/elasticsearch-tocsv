@@ -1,7 +1,7 @@
 Python Elasticsearch-to-CSV Export Tool
 =======================================
 
-Simple Python CLI tool to easily extract a massive amount of Elasticsearch documents into a csv file, exploiting multiprocessing features and leveraging the underneath elasticsearch-py package.
+Simple Python CLI tool to easily extract a massive amount of Elasticsearch documents into a csv file, exploiting multiprocessing features and leveraging the underlying elasticsearch-py package.
 
 |
 
@@ -15,7 +15,7 @@ In order to install and use the `elasticsearch-tocsv <https://pypi.org/project/e
   * `pandas <https://pypi.org/project/pandas/>`_
   * `pytz <https://pypi.org/project/pytz/>`_
   * `tqdm <https://pypi.org/project/tqdm/>`_ (unless you want to disable the loading progress bars)
-  * `python >= 3.8 <https://www.python.org/downloads/release/python-380/>`_ (needed to avoid multiprocessing<-->logger problems)
+  * `python >= 3.8 <https://www.python.org/downloads/release/python-380/>`_ (required to avoid multiprocessing<-->logger problems)
 
 |
 
@@ -27,14 +27,14 @@ Install the ``elasticsearch-tocsv`` package with:
 
     $ ``pip3 install elasticsearch-tocsv``
 
-Requiring of a version of python >=3.8 is not really mandatory (even 3.7 should work but needs to be tested first) but it's highly recommended since previous versions might have problems when logging in multiprocessing mode.
+A version of python >=3.8 is not absolutely necessary (3.7 should also work but needs to be tested first) but is highly recommended, as previous versions might experience problems when logging in multiprocessing mode.
 
 |
 
 Arguments description
 ---------------------
 
-Running ``elasticsearch_tocsv --help`` on the terminal you will be presented with all the possible arguments you can launch the command with. Some of them are mandatory, some others might depend on different ones. Here's the complete list of what the arguments are, if they are mandatory or optional and what they are thought for. Later on some use cases will be reported.
+Running ``elasticsearch_tocsv --help`` on the terminal you will be presented with all the possible arguments you can launch the command with. Some of them are mandatory, while some might depend on others. Below is a complete list which describes what each argument is, whether it's mandatory or optional and its intended use. Later on some use cases will also be reported.
 
   **MANDATORY**
 
@@ -71,12 +71,12 @@ Running ``elasticsearch_tocsv --help`` on the terminal you will be presented wit
   * **-b, --batch_size** *[default: 5000]*
 
     | Batch size for the scroll API. Max 10000. 
-    | Increasing it might impact the ES instance heap memory. If you want to set a value greater than 10000, you must set the *max_result_window* elasticsearch property accordingly first. 
-    | Please check out the `elasticsearch documentation <https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules.html>`_ before increasing that value. 
+    | Increasing it might impact the ES instance heap memory. If you want to set a value greater than 10000, you must set first the *max_result_window* elasticsearch property accordingly. 
+    | Please check out the `elasticsearch documentation <https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules.html>`_ before increasing this value. 
 
   * **-c, --cert_verification** *[default: False]*
 
-    | Require ssl certificate verification. Set to True to enable it
+    | Require ssl certificate verification. Set to True to enable.
     | *This option is ignored if --ssl is not set to True*.
 
   * **-cp, --certificate_path** *[default: '']*
@@ -87,13 +87,13 @@ Running ``elasticsearch_tocsv --help`` on the terminal you will be presented wit
   * **-dp, --disable_progressbar** *[default: False]*
 
     | Turn off the progressbar visualization.
-    | Set to True to simply be noticed when processes have done fetching data, without the loading progressbars.
+    | Set to True to simply be notified when processes have completed fetching data, without the loading progressbars.
     | Might be useful in case you redirect the output to a file.
 
   * **-e, --export_path** *[default: es_export.csv]*
 
-    | Path where to store the csv file. Make sure the user who's launching the script is allowed to write to that path. 
-    | *WARNING*: At the end of the process, unless --keep_partial is set to True, all the files with filenames "[--export_path]_process*.csv" will be removed. Make sure you're setting a --export_path which won't accidentally delete any other file apart from the ones created by this script.
+    | Path to save the csv file to. Make sure the user who's launching the script is allowed to write to that path. 
+    | *WARNING*: At the end of the process, unless --keep_partial is set to True, all the files with filenames "[--export_path]_process*.csv" will be removed. Make sure you're setting an --export_path which won't accidentally delete any other file apart from the ones created by this script.
 
   * **-ed, --ending_date** *[default: now+1000y]*
 
@@ -114,13 +114,13 @@ Running ``elasticsearch_tocsv --help`` on the terminal you will be presented wit
 
   * **-k, --keep_partials** *[default: False]*
 
-    | During the processing, various partial csv files will be created before joining them into a single csv. Set this flag to True if you want to keep also these partial files.
-    | Notice the partial files will be kept anyway if something goes wrong during the creation of the final file.
+    | During processing, various partial csv files will be created before merging them into a single csv. Set this flag to True if you want to keep these partial files as well.
+    | Note that the partial files will be kept anyway if something goes wrong during the creation of the final file.
 
   * **-lbi, --load_balance_interval** *[default: None]*
 
     | Set this option to build process intervals by events count rather than equally spaced over time. The shorter the interval, the better the events-to-process division, the heavier the initial computation to build the intervals. 
-    | It cannot go below 1d if *--allow_short_interval* is not set. 
+    | Cannot go below 1d if *--allow_short_interval* is not set. 
     | Allowed values are a number followed by one of *[m, h, d, M, y]*, like *1d* for 1 day or *4M* for 4 months. 
     | *Multiprocessing must be enabled to set this option*.
 
@@ -138,7 +138,7 @@ Running ``elasticsearch_tocsv --help`` on the terminal you will be presented wit
 
   * **-pcs, --partial_csv_size** *[default: 10000000]*
 
-    | Max number of rows each partial csv can contain. The higher the number of fields to extract, the lower this number should be not to keep too many data in memory. 
+    | Max number of rows each partial csv can contain. The higher the number of fields to extract, the lower this number should be so as not to keep too much data in memory. 
     | *If set, must be greater than --batch_size (default 5000)*
 
   * **-pn, --process_number** *[default to max number of cpu of the machine]*
@@ -149,11 +149,11 @@ Running ``elasticsearch_tocsv --help`` on the terminal you will be presented wit
 
     | Elasticsearch password in clear. 
     | If set, the *--secret_password* will be ignored. 
-    | If both this and *--secret_password* are not set, a prompt password will be asked (leave it blank if not needed). 
+    | If neither this nor *--secret_password* are set, a prompt password will be asked for (leave blank if not needed). 
 
   * **-q, --query_string** *[default: *]*
 
-    | Elasticsearch query string. Put it between quotes and escape internal quotes characters (e.g. "one_field: foo AND another_field.keyword: \"bar\"").
+    | Elasticsearch query string. Put between quotes and escape internal quotes characters (e.g. "one_field: foo AND another_field.keyword: \"bar\"").
 
   * **-rd, --remove_duplicates** *[default: False]*
 
@@ -163,7 +163,7 @@ Running ``elasticsearch_tocsv --help`` on the terminal you will be presented wit
 
   * **-s, --ssl** *[default: False]*
 
-    | Require ssl connection. Set to True to enable it.
+    | Require ssl connection. Set to True to enable.
 
   * **-sd, --starting_date** *[default: now-1000y]*
 
@@ -173,11 +173,11 @@ Running ``elasticsearch_tocsv --help`` on the terminal you will be presented wit
 
   * **-spw, --secret_password** *[default: None]*
 
-    | Env var pointing the Elasticsearch password. If both this a *--password* are not set, a prompt password will be asked (leave it blank if not needed).
+    | Env var pointing the Elasticsearch password. If neither this or *--password* are set, a prompt password will be asked for (leave blank if not needed).
 
   * **-t, --time_field** *[default: None]*
 
-    | Time field to query on. If not set and *--starting_date* or *--ending_date* are set an exception will be raised.
+    | Time field to query on. If not set and *--starting_date* or *--ending_date* are set, an exception will be raised.
 
   * **-tz, --timezone** *[default to timezone of the machine]*
 
@@ -223,4 +223,4 @@ Known bugs and required fixes
 
   1. **Standard output multiprocessing printing when progress bars are not disabled**
     
-    This is a known issue. When multiprocessing is enabled, progress bars printing might get a bit messy from time to time. No real problems in the usage but I know it might be a bit annoying. It's gonna be fixed as soon as possible hopefully.``
+    This is a known issue. When multiprocessing is enabled, progress bars printing might get a bit messy from time to time. This doesn't present any real usage problems, but I know it might be a bit annoying. It'll hopefully be fixed as soon as possible.
