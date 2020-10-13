@@ -121,7 +121,7 @@ Running ``elasticsearch_tocsv --help`` on the terminal you will be presented wit
 
     | Set this option to build process intervals by events count rather than equally spaced over time. The shorter the interval, the better the events-to-process division, the heavier the initial computation to build the intervals. 
     | Cannot go below 1d if *--allow_short_interval* is not set. 
-    | Allowed values are a number followed by one of *[m, h, d, M, y]*, like *1d* for 1 day or *4M* for 4 months. 
+    | Allowed values are a number followed by one of *[m, h, d, w, M, y]*, like *1d* for 1 day or *4M* for 4 months. 
     | *Multiprocessing must be enabled to set this option*.
 
   * **-mf, --metadata_fields** *[default: '']*

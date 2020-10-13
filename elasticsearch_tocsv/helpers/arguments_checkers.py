@@ -22,7 +22,7 @@ def fetch_arguments():
   ap.add_argument("-ho", "--host", required=False, help="Elasticsearch host. If not set, localhost will be used", default="localhost")
   ap.add_argument("-i", "--index", required=True, help="Elasticsearch index pattern to query on. To use wildcard (*) put the index in quotes (e.g. \"my-indices*\")")
   ap.add_argument("-k", "--keep_partials", required=False, help="during the processing, various partial csv files will be created before joining them into a single csv. Set this flas to True if you want to keep also these partial files. Default to False. Notice the partial files will be kept anyway if something goes wrong during the creation of the final file.", type=real_bool, default=False)
-  ap.add_argument("-lbi", "--load_balance_interval", required=False, help="set this option to build process intervals by events count rather than equally spaced over time. The shorter the interval, the better the events-to-process division, the higher the heavier the computation. It cannot go below 1d if --allow_short_interval is not set. Allowed values are a number plus one of the following [m, h, d, M, y], like 1d for 1 day or 4M for 4 months. Multiprocessing must be enabled to set this option", default=None)
+  ap.add_argument("-lbi", "--load_balance_interval", required=False, help="set this option to build process intervals by events count rather than equally spaced over time. The shorter the interval, the better the events-to-process division, the higher the heavier the computation. It cannot go below 1d if --allow_short_interval is not set. Allowed values are a number plus one of the following [m, h, d, w, M, y], like 1d for 1 day or 4M for 4 months. Multiprocessing must be enabled to set this option", default=None)
   ap.add_argument("-mf", "--metadata_fields", required=False, help="Elasticsearch metadata fields (_index, _type, _id, _score), passed as a string with commas between fields and no whitespaces (e.g. \"_id,_index\")", default='')
   ap.add_argument("-o", "--scroll_timeout", required=False, help="scroll window timeout. Default to 4m", default='4m')
   ap.add_argument("-p", "--port", required=False, help="Elasticsearch port. If not set, the default port 9200 will be used", default=9200, type=int)
@@ -101,8 +101,8 @@ def parse_lbi(lbi, allow_short_interval, multiprocess_enabled):
   try:
     number = re.search("\d+", lbi).group() if re.search("\d+", lbi) != None else None
     unit = re.search("[^\d]+", lbi).group() if re.search("[^\d]+", lbi) != None else None
-    allowed_units = ['m', 'h', 'd', 'M', 'y'] if allow_short_interval else ['d', 'M', 'y']
-    unit_in_seconds = {'m':60, 'h':3600, 'd':86400, 'M':2592000, 'y':31104000}
+    allowed_units = ['m', 'h', 'd', 'w', 'M', 'y'] if allow_short_interval else ['d', 'w', 'M', 'y']
+    unit_in_seconds = {'m':60, 'h':3600, 'd':86400, 'w':604800 , 'M':2592000, 'y':31104000}
     if number == None or not number.isnumeric():
       sys.exit(wrap_red("--load_balance_interval option must begin with a number. Please check the --help to know how to properly set it"))
     elif unit == None or unit == '' or unit not in allowed_units:
