@@ -23,7 +23,7 @@ def main():
 
   if args['enable_multiprocessing']:
     log.info(wrap_blue('Connection to ES host established -- Multiprocessing enabled\n'))
-    processes_to_use = min(multiprocessing.cpu_count(), safe_toint_cast(args['process_number'])) if args['process_number'] != None else multiprocessing.cpu_count()
+    processes_to_use = min(multiprocessing.cpu_count(), args['process_number']) if args['process_number'] != None else multiprocessing.cpu_count()
     
     # Split total time range in equals time intervals so to let each process work on a partial set of data and store the resulting list as a sublist of the lists_to_join list
     if args['load_balance_interval'] == None:
