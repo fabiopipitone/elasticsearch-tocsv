@@ -27,7 +27,7 @@ Install the ``elasticsearch-tocsv`` package with:
 
     $ ``pip3 install elasticsearch-tocsv``
 
-A version of python >=3.8 is not absolutely necessary (3.7 should also work but needs to be tested first) but is highly recommended, as previous versions might experience problems when logging in multiprocessing mode.
+A version of python >=3.8 is not absolutely necessary (3.7 should also work) but is highly recommended, as previous versions might experience problems when logging in multiprocessing mode.
 
 |
 
@@ -51,60 +51,85 @@ Running ``elasticsearch_tocsv --help`` on the terminal you will be presented wit
 
 
   **OPTIONAL**
+  * **-aep, --aggregated_export_path** *[default: aggregated_es_export.csv]*
+
+    | Path where to store the aggregated csv file.
 
   * **-af, --aggregation_fields** *[default: None]*
 
-    | Set this option if you want to generate an additional file (raw exports file will still be generated) containing the info aggregated according to specific fields. 
+    | User can set this option if they want to generate an additional file (raw exports file will still be generated) containing the info aggregated according to specific fields. 
     | Specify the fields to aggregate on as a string with commas between fields and no whitespaces (e.g. "field1,field2").
+
+  * **-ao, --aggregate_only** *[default: False]*
+
+    | Set this option to True to skip all the extraction and processing part. 
+    | *This option requires the -rif/--raw_input_file to be set*.
 
   * **-asi, --allow_short_interval** *[default: False]*
 
-    | Set this option to True to allow the --load_balance_interval to go below 1 day. 
-    | With this option enabled the --load_balance_interval can be set down to 1 minute (1m).
+    | Set this option to True to allow the *-lbi/--load_balance_interval* to go below 1 day. 
+    | With this option enabled the *-lbi/--load_balance_interval* can be set down to 1 minute (1m).
 
   * **-at, --aggregation_type** *[default: count]*
 
     | Aggregation function to use when generating the aggregated csv file. 
     | It can be one of the following: ['count', 'min', 'max', 'mean', 'sum']. 
-    | *This option requires the --aggregation_fields to be set*.
+    | *This option requires the -af/--aggregation_fields to be set*.
+
+  * **-atf, --aggregation_time_field** *[default: None]*
+
+    | In case the aggregation on a given time field must be carried out according to a given interval, that time field must be specified here (and not in the *-af/--aggregation_fields* option) and the interval in the *-ats/--aggregation_time_span*.
+    | The time field of interest must be among the input fields (from Elasticsearch or from the csv loaded with *-rif/--raw_input_file*).
+    | *This option requires the -af/--aggregation_fields to be set*.
+
+  * **-ats, --aggregation_time_span** *[default: 1]*
+
+    | Interval the *-atf/--aggregation_time_field* will work with. 
+    | It must be passed as a integer and it refers to a given number of days.
 
   * **-b, --batch_size** *[default: 5000]*
 
     | Batch size for the scroll API. Max 10000. 
-    | Increasing it might impact the ES instance heap memory. If you want to set a value greater than 10000, you must set first the *max_result_window* elasticsearch property accordingly. 
+    | Increasing it might impact the ES instance heap memory. If the user needs a value greater than 10000, they must set first the *max_result_window* elasticsearch property accordingly. 
     | Please check out the `elasticsearch documentation <https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules.html>`_ before increasing this value. 
 
   * **-c, --cert_verification** *[default: False]*
 
-    | Require ssl certificate verification. Set to True to enable.
-    | *This option is ignored if --ssl is not set to True*.
+    | Requires ssl certificate verification. Set to True to enable.
+    | *This option is ignored if -s/--ssl is not set to True*.
+
+  * **-cbo, --count_boolean_occurrences** *[default: None]*
+
+    | This option might of help in case the user wants to count the occurrences of a boolean field.
+    | All boolean fields that have to be taken into consideration when True, must be passed as a string with commas between fields and no whitespaces (e.g. "field1,field2").
+    | Remember to set the aggregation type "sum" in the *-at/--aggregation_types* option for the corresponding aggregation fields.
 
   * **-cp, --certificate_path** *[default: '']*
 
     | Path to the certificate to verify the instance certificate against.
-    | *This option is ignored if --ssl and --cert_verification are not set to True*.
+    | *This option is ignored if -s/--ssl and -c/--cert_verification are not set to True*.
 
   * **-dp, --disable_progressbar** *[default: False]*
 
     | Turn off the progressbar visualization.
     | Set to True to simply be notified when processes have completed fetching data, without the loading progressbars.
-    | Might be useful in case you redirect the output to a file.
+    | Might be useful in case the output is redirected to a file.
 
   * **-e, --export_path** *[default: es_export.csv]*
 
     | Path to save the csv file to. Make sure the user who's launching the script is allowed to write to that path. 
-    | *WARNING*: At the end of the process, unless --keep_partial is set to True, all the files with filenames "[--export_path]_process*.csv" will be removed. Make sure you're setting an --export_path which won't accidentally delete any other file apart from the ones created by this script.
+    | *WARNING*: At the end of the process, unless *-k/--keep_partial* is set to True, all the files with filenames "{export_path}_process*.csv" will be removed. Make sure to set an *-e/--export_path* which won't accidentally delete any other file apart from the ones created by this script.
 
   * **-ed, --ending_date** *[default: now+1000y]*
 
     | Query ending date. Must be set in iso 8601 format, without the timezone (e.g. "YYYY-MM-ddTHH:mm:ss").
-    | Timezone can be specified with the --timezone option.
-    | *This option requires the --time_field to be set*.
+    | Timezone can be specified with the *-tz/--timezone* option.
+    | *This option requires the -t/--time_field to be set*.
 
   * **-em, --enable_multiprocessing** *[default: False]*
 
     | Enable the multiprocess options. Set to True to exploit multiprocessing. 
-    | *This option requires the --time_field to be set*.
+    | *This option requires the -t/--time_field to be set*.
 
   * **-h, --help**
 
@@ -114,13 +139,13 @@ Running ``elasticsearch_tocsv --help`` on the terminal you will be presented wit
 
   * **-k, --keep_partials** *[default: False]*
 
-    | During processing, various partial csv files will be created before merging them into a single csv. Set this flag to True if you want to keep these partial files as well.
+    | During processing, various partial csv files will be created before merging them into a single csv. Set this flag to True to prevent partial files from being deleted.
     | Note that the partial files will be kept anyway if something goes wrong during the creation of the final file.
 
   * **-lbi, --load_balance_interval** *[default: None]*
 
     | Set this option to build process intervals by events count rather than equally spaced over time. The shorter the interval, the better the events-to-process division, the heavier the initial computation to build the intervals. 
-    | Cannot go below 1d if *--allow_short_interval* is not set. 
+    | Cannot go below 1d unless *-asi/--allow_short_interval* is enabled. 
     | Allowed values are a number followed by one of *[m, h, d, w, M, y]*, like *1d* for 1 day or *4M* for 4 months. 
     | *Multiprocessing must be enabled to set this option*.
 
@@ -139,7 +164,7 @@ Running ``elasticsearch_tocsv --help`` on the terminal you will be presented wit
   * **-pcs, --partial_csv_size** *[default: 10000000]*
 
     | Max number of rows each partial csv can contain. The higher the number of fields to extract, the lower this number should be so as not to keep too much data in memory. 
-    | *If set, must be greater than --batch_size (default 5000)*
+    | *If set, must be greater than -b/--batch_size (default 5000)*
 
   * **-pn, --process_number** *[default to max number of cpu of the machine]*
 
@@ -148,18 +173,36 @@ Running ``elasticsearch_tocsv --help`` on the terminal you will be presented wit
   * **-pw, --password** *[default: None]*
 
     | Elasticsearch password in clear. 
-    | If set, the *--secret_password* will be ignored. 
-    | If neither this nor *--secret_password* are set, a prompt password will be asked for (leave blank if not needed). 
+    | If set, the *-spw/--secret_password* will be ignored. 
+    | If neither this nor *-spw/--secret_password* are set, a prompt password will be asked for (leave blank if not needed). 
 
   * **-q, --query_string** *[default: *]*
 
     | Elasticsearch query string. Put between quotes and escape internal quotes characters (e.g. "one_field: foo AND another_field.keyword: \"bar\"").
 
+  * **-ra, --rename_aggregations** *[default: None]*
+
+    | Default name for a column resulting from an aggregation will be "estocsv__{field_name}__{aggregation_type}".
+    | In case custom names are needed, they can be specified here as a string with each aggregation field linked to the following aggregation name through a double dash (--) and separated from the next couple of values with a comma, like "field1--count_field1,field2--sum_field2". 
+    | *This option requires the -af/--aggregation_fields to be set*.
+
   * **-rd, --remove_duplicates** *[default: False]*
 
     | Set to True to remove all duplicated events.
-    | *WARNING*: two events with the same values of the fields specified in *--fields* will be considered duplicated and then unified even if on ES they might not be equal because of other fields not included in *--fields* (e.g. *_id*). 
-    | Check out the *--metadata_fields* option to include further info like the ES _id.
+    | *WARNING*: two events with the same values of the fields specified in *-f/--fields* will be considered duplicated and then unified even if on ES they might not be equal because of other fields not included in *-f/--fields* (e.g. *_id*). 
+    | Check out the *-mf/--metadata_fields* option to include further info like the ES _id.
+
+  * **-rf, --rename_fields** *[default: None]*
+
+    | Set this option to rename some of the fields right before the csv file is written.
+    | They can be set as a string with each field to rename linked to the following new name through a double dash (--) and separated from the next couple of values with a comma, like "agg_var1--count,agg_var2--sum". 
+    | Default value is the last aggregation field and the *count* aggregation type, like "agg_field3--count". 
+    | *WARNING*: All the manipulations and aggregations, if any, will impact the original names of the fields so do not use these new names in other arguments but stick to the original ones.
+
+  * **-rif, --raw_input_file** *[default: None]*
+
+    | Path to csv file to import as raw file.
+    | *This option is required if -ao/--aggregate_only is enabled*.
 
   * **-s, --ssl** *[default: False]*
 
@@ -168,16 +211,16 @@ Running ``elasticsearch_tocsv --help`` on the terminal you will be presented wit
   * **-sd, --starting_date** *[default: now-1000y]*
 
     | Query starting date. Must be set in iso 8601 format, without the timezone (e.g. "YYYY-MM-ddTHH:mm:ss")
-    | Timezone can be specified with the --timezone option.
-    | *This option requires the --time_field to be set*.
+    | Timezone can be specified with the *-tz/--timezone* option.
+    | *This option requires the -t/--time_field to be set*.
 
   * **-spw, --secret_password** *[default: None]*
 
-    | Env var pointing the Elasticsearch password. If neither this or *--password* are set, a prompt password will be asked for (leave blank if not needed).
+    | Env var pointing the Elasticsearch password. If neither this or *-pw/--password* are set, a prompt password will be asked for (leave blank if not needed).
 
   * **-t, --time_field** *[default: None]*
 
-    | Time field to query on. If not set and *--starting_date* or *--ending_date* are set, an exception will be raised.
+    | Time field to query on. If not set and *-sd/--starting_date* or *-ed/--ending_date* are set, an exception will be raised.
 
   * **-tz, --timezone** *[default to timezone of the machine]*
 
