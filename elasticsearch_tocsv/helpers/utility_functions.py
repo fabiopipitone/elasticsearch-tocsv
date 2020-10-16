@@ -1,6 +1,7 @@
 import os, logging, getpass, sys
 import dateutil.parser as dateparser
 import pandas as pd
+import numpy as np
 from .color_wrappers import *
 
 def build_source_query(fields_of_interest):
@@ -72,13 +73,56 @@ def remove_duplicates(args, df):
   except Exception as e:
     sys.exit(wrap_red(f"Something went wrong when removing duplicates (set by user or the possible duplicates due to multiprocessing). The partial csv files won't be deleted. Here's the exception: \n\n{e}"))
 
-def aggregate_fields(filename, fields_as_string, agg_type):
+def clean_dictionary(dictionaries, main_keys, dict_type, filename, log):
+  dictionary = dictionaries[dict_type]
+  if dict_type == '--rename_aggregations':
+    aggregation_dict = dictionaries['--aggregation_types']
+    for agg_key in aggregation_dict.keys():
+      if agg_key not in dictionary.keys(): dictionary[agg_key] = f"estocsv__{agg_key}__{aggregation_dict[agg_key]}"
+  for key in dictionary.keys():
+    if key not in main_keys: 
+      log.warning(wrap.orange(f"\"{key}\" you set in your {dict_type} is not present among the columns of the raw data file \"{filename}\". It'll be removed from the aggregated column"))
+      dictionary.pop(key, None)
+  return dictionary
+
+def clean_list(list_to_clean, main_keys):
+  return [element for element in list_to_clean if element in main_keys]
+
+def rename_df_columns(df, new_columns):
+  return df.rename(columns=new_columns)
+
+def aggregate_fields(filename, args, log, df_ready=None):
   try:
-    df = pd.read_csv(filename)
-    aggregation_fields = fields_as_string.split(',')
-    for field in df.columns.values.tolist():
-      if field not in aggregation_fields: df.drop(columns=[field], inplace=True)
-    df['estocsv_count'] = 1
-    return df.groupby(aggregation_fields).agg(agg_type)
+    df = pd.read_csv(filename) if df_ready is None else df_ready
+    columns_to_keep = []
+    aggregation_types = clean_dictionary({"--aggregation_types": args['aggregation_types']}, df.columns, '--aggregation_types', filename, log)
+    aggregation_names = clean_dictionary({"--aggregation_types": args['aggregation_types'], "--rename_aggregations": args['rename_aggregations']}, df.columns, '--rename_aggregations', filename, log)
+    boolean_occurrences = clean_list(args['count_boolean_occurrences'].split(','), df.columns)
+    aggregation_fields = args['aggregation_fields'].split(',')
+
+    columns_to_keep = list(set(aggregation_fields + list(aggregation_types.keys()) + list(aggregation_names.keys()) + boolean_occurrences))
+
+    for boolean in boolean_occurrences:
+      df[boolean] = np.where(df[boolean] == True, 1, 0)
+    
+    agg_time_field = args['aggregation_time_field']
+    if agg_time_field is not None and agg_time_field in df.columns:
+      agg_timespan = args['aggregation_time_span']
+      columns_to_keep = list(set(columns_to_keep + [agg_time_field]))
+      df[agg_time_field] = pd.to_datetime(df[agg_time_field])
+      df = df.set_index(agg_time_field)
+      aggregation_fields.insert(0, pd.Grouper(level=agg_time_field, freq=f"{agg_timespan}d"))
+      
+    for column in df.columns:
+      if column not in columns_to_keep: df.drop(columns=[column], inplace=True)
+    
+    aggregated_df = df.groupby(aggregation_fields).agg(aggregation_types)
+    aggregated_df.rename(columns=aggregation_names, inplace=True)
+    aggregated_df = aggregated_df.reset_index()
+
+    if agg_time_field is not None and agg_time_field in aggregated_df.columns:
+      aggregated_df[agg_time_field] = aggregated_df[agg_time_field].dt.date
+
+    return aggregated_df
   except Exception as e:
-    sys.exit(wrap_red(f"Something went wrong when trying to aggregate the raw documents on the fields passed {fields_as_string}. Here's the exception: \n\n{e}"))
+    sys.exit(wrap_red(f"Something went wrong when trying to aggregate the raw documents. Here's the exception: \n\n{e}"))

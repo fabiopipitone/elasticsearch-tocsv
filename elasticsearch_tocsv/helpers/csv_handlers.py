@@ -13,10 +13,13 @@ def check_csv_already_written(filename):
       print("Sorry, I can't understand the answer. Please answer with 'y' or 'n'")
   return filename
 
-def write_csv(export_path, fields_to_export, exception_message='', df=None, list_to_convert=False, index=False):
+def write_csv(export_path, fields_to_export, exception_message='', df=None, list_to_convert=False, index=False, new_fields={}):
   df = pd.DataFrame(list_to_convert, columns=fields_to_export) if list_to_convert else df
-  try: 
-    df.to_csv(export_path, index=index, columns=fields_to_export)
+  try:
+    if fields_to_export is None:
+      df.to_csv(export_path, index=index)
+    else:
+      df.to_csv(export_path, index=index, columns=fields_to_export)
   except Exception as e:
     sys.exit(wrap_red(f"{exception_message} Here's the exception: \n\n{e}"))
 
