@@ -98,7 +98,7 @@ def aggregate_fields(filename, args, log, df_ready=None):
     aggregation_types = clean_dictionary({"--aggregation_types": args['aggregation_types']}, df.columns, '--aggregation_types', filename, log)
     aggregation_names = clean_dictionary({"--aggregation_types": args['aggregation_types'], "--rename_aggregations": args['rename_aggregations']}, df.columns, '--rename_aggregations', filename, log)
     boolean_occurrences = clean_list(args['count_boolean_occurrences'].split(','), df.columns)
-    aggregation_fields = args['aggregation_fields'].split(',')
+    aggregation_fields = list(set(args['aggregation_fields'].split(',')) & set(list(df.columns)))
 
     columns_to_keep = list(set(aggregation_fields + list(aggregation_types.keys()) + list(aggregation_names.keys()) + boolean_occurrences))
 
