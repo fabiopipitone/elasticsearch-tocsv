@@ -81,7 +81,7 @@ def clean_dictionary(dictionaries, main_keys, dict_type, filename, log):
       if agg_key not in dictionary.keys(): dictionary[agg_key] = f"estocsv__{agg_key}__{aggregation_dict[agg_key]}"
   for key in dictionary.keys():
     if key not in main_keys: 
-      log.warning(wrap.orange(f"\"{key}\" you set in your {dict_type} is not present among the columns of the raw data file \"{filename}\". It'll be removed from the aggregated column"))
+      log.warning(wrap_orange(f"\"{key}\" you set in your {dict_type} is not present among the columns of the raw data file \"{filename}\". It'll be removed from the aggregated column"))
       dictionary.pop(key, None)
   return dictionary
 
