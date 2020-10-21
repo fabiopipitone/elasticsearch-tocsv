@@ -2,6 +2,7 @@ import os, logging, getpass, sys
 import dateutil.parser as dateparser
 import pandas as pd
 import numpy as np
+from dateutil import tz
 from .color_wrappers import *
 
 def build_source_query(fields_of_interest):
@@ -108,8 +109,10 @@ def aggregate_fields(filename, args, log, df_ready=None):
     agg_time_field = args['aggregation_time_field']
     if agg_time_field is not None and agg_time_field in df.columns:
       agg_timespan = args['aggregation_time_span']
+      timezone = args['timezone'] if args['timezone'] is not None else tz.tzlocal()
       columns_to_keep = list(set(columns_to_keep + [agg_time_field]))
       df[agg_time_field] = pd.to_datetime(df[agg_time_field])
+      df[agg_time_field] = df[agg_time_field].dt.tz_convert(timezone)
       df = df.set_index(agg_time_field)
       aggregation_fields.insert(0, pd.Grouper(level=agg_time_field, freq=f"{agg_timespan}d"))
       

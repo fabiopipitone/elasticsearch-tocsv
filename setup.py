@@ -5,7 +5,7 @@ with open("README.rst", "r") as fh:
 
 setup(
   name='elasticsearch-tocsv',
-  version='0.1.1',
+  version='0.1.2',
   author='Fabio Pipitone',
   author_email='fabio.pipitone93@gmail.com',
   url='https://github.com/fabiopipitone/elasticsearch-tocsv',
