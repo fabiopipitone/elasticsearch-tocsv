@@ -109,6 +109,12 @@ Running ``elasticsearch_tocsv --help`` on the terminal you will be presented wit
     | Path to the certificate to verify the instance certificate against.
     | *This option is ignored if -s/--ssl and -c/--cert_verification are not set to True*.
 
+  * **-cs, --csv_separator** *[default: ',']*
+
+    | Separator to use in the CSV resulting files (both raw and aggregated, if any).
+    | Separators longer than 1 character and different from '\s+' will be interpreted as regular expressions and will also force the use of the Python parsing engine. 
+    | Note that regex delimiters are prone to ignoring quoted data.
+
   * **-dp, --disable_progressbar** *[default: False]*
 
     | Turn off the progressbar visualization.

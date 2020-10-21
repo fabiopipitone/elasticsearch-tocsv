@@ -116,11 +116,11 @@ def fetch_es_data(args, starting_date, ending_date, process_name='Main'):
 
     # If this process has already fetched 10M events, create the df, write the partial csv and empty the fetched_data list
     if len(fetched_data) >= args['partial_csv_size']:
-        write_csv(csv_partial_filename, df_header, exception_message=f"Something went wrong when trying to write the partial csv {csv_partial_filename}.", list_to_convert=fetched_data)
+        write_csv(csv_partial_filename, df_header,  args['csv_separator'], exception_message=f"Something went wrong when trying to write the partial csv {csv_partial_filename}.", list_to_convert=fetched_data)
         process_tmp_subset += 1
         csv_partial_filename = f"{args['export_path'][:-4]}_process{process_number}_{str(process_tmp_subset).zfill(5)}.csv"
         fetched_data = []
     
-  write_csv(csv_partial_filename, df_header, exception_message=f"Something went wrong when trying to write the partial csv {csv_partial_filename}.", list_to_convert=fetched_data)
+  write_csv(csv_partial_filename, df_header,  args['csv_separator'], exception_message=f"Something went wrong when trying to write the partial csv {csv_partial_filename}.", list_to_convert=fetched_data)
   log.info(bold(f"Process {process_name} has fetched and processed {total_hits} docs. They've been split into {process_tmp_subset} partial csv file(s)"))
   return True
