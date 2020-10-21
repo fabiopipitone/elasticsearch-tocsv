@@ -94,7 +94,7 @@ def rename_df_columns(df, new_columns):
 
 def aggregate_fields(filename, args, log, df_ready=None):
   try:
-    df = pd.read_csv(filename, sep=args['csv_separator']) if df_ready is None else df_ready
+    df = pd.read_csv(filename, sep=args['csv_separator'], decimal=args['decimal_separator']) if df_ready is None else df_ready
     columns_to_keep = []
     aggregation_types = clean_dictionary({"--aggregation_types": args['aggregation_types']}, df.columns, '--aggregation_types', filename, log)
     aggregation_names = clean_dictionary({"--aggregation_types": args['aggregation_types'], "--rename_aggregations": args['rename_aggregations']}, df.columns, '--rename_aggregations', filename, log)

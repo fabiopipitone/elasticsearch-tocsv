@@ -121,6 +121,15 @@ Running ``elasticsearch_tocsv --help`` on the terminal you will be presented wit
     | Set to True to simply be notified when processes have completed fetching data, without the loading progressbars.
     | Might be useful in case the output is redirected to a file.
 
+  * **-dr, --decimal_rounding** *[default: 2]*
+
+    | Round decimals to this value.
+
+  * **-ds, --decimal_separator** *[default: .]*
+
+    | Set the custom decimal separator for the exported files. 
+    | Consider one that doesn't mess up with the csv_separator (default to ',').
+
   * **-e, --export_path** *[default: es_export.csv]*
 
     | Path to save the csv file to. Make sure the user who's launching the script is allowed to write to that path. 

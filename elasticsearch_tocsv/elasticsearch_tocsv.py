@@ -1,13 +1,13 @@
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing, urllib3
-from helpers.csv_handlers import *
-from helpers.utility_functions import *
-from helpers.interval_builders import *
-from helpers.connection_tools import *
-from helpers.arguments_checkers import *
-from helpers.color_wrappers import *
-from utils.TqdmLoggingHandler import TqdmLoggingHandler
-from utils.CustomLogger import CustomLogger
+from elasticsearch_tocsv.helpers.csv_handlers import *
+from elasticsearch_tocsv.helpers.utility_functions import *
+from elasticsearch_tocsv.helpers.interval_builders import *
+from elasticsearch_tocsv.helpers.connection_tools import *
+from elasticsearch_tocsv.helpers.arguments_checkers import *
+from elasticsearch_tocsv.helpers.color_wrappers import *
+from elasticsearch_tocsv.utils.TqdmLoggingHandler import TqdmLoggingHandler
+from elasticsearch_tocsv.utils.CustomLogger import CustomLogger
 
 def main():
   log = CustomLogger(__name__).logger
@@ -59,7 +59,7 @@ def main():
 
     # Joining partial csv files previously created into a single one
     log.info(wrap_blue('Joining partial csv files\n'))
-    final_df = join_partial_csvs(args['export_path'][:-4], args['csv_separator'])
+    final_df = join_partial_csvs(args['export_path'][:-4], args['csv_separator'], args['decimal_separator'])
     
     # Remove duplicates
     final_df = remove_duplicates(args, final_df)
@@ -68,7 +68,7 @@ def main():
 
     # Write the CSV from the dataframe
     log.info(wrap_blue(f'Creating the csv at the following export path --> {args["export_path"]}.\n'))
-    write_csv(args['export_path'], fields_to_export, args['csv_separator'], "Something went wrong when trying to write the final csv after the merge of the partial csv files. The partial csv files won't be deleted.", df=final_df_newcolumns)
+    write_csv(args['export_path'], fields_to_export, args['csv_separator'], args['decimal_separator'], args['decimal_rounding'], "Something went wrong when trying to write the final csv after the merge of the partial csv files. The partial csv files won't be deleted.", df=final_df_newcolumns)
 
     # Delete partial csvs
     if not args['keep_partials']: 
@@ -86,7 +86,7 @@ def main():
     file_to_aggregate = args['raw_input_file'] if args['aggregate_only'] else args['export_path']
     aggregated_df = aggregate_fields(file_to_aggregate, args, log, args['df_ready'])
     aggregated_df = rename_df_columns(aggregated_df, args['rename_fields'])
-    write_csv(args['aggregated_export_path'], None,  args['csv_separator'], f"Something when wrong when trying to write the aggregated dataframe to {args['aggregated_export_path']}. If you exported the raw data from Elasticsearch, the raw csv file will be available at \"{args['export_path']}\". Please use it with the --aggregate_only flag and a proper --aggregation_types and --aggregation_fields configuration to generate your aggregated file.", df=aggregated_df, index=False)
+    write_csv(args['aggregated_export_path'], None,  args['csv_separator'], args['decimal_separator'], args['decimal_rounding'], f"Something when wrong when trying to write the aggregated dataframe to {args['aggregated_export_path']}. If you exported the raw data from Elasticsearch, the raw csv file will be available at \"{args['export_path']}\". Please use it with the --aggregate_only flag and a proper --aggregation_types and --aggregation_fields configuration to generate your aggregated file.", df=aggregated_df, index=False)
     log.info(wrap_blue(f"Aggregated file has been created at path \"{args['aggregated_export_path']}\"\n"))
 
   log.info(wrap_green(bold("################# EXITING SUCCESSFULLY ################\n")))
