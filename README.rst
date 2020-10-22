@@ -229,6 +229,11 @@ Running ``elasticsearch_tocsv --help`` on the terminal you will be presented wit
     | Timezone can be specified with the *-tz/--timezone* option.
     | *This option requires the -t/--time_field to be set*.
 
+  * **-sm, --silent_mode** *[default: False]*
+
+    | With this option set to True the tool is run in silent mode, without any user interaction (password request if not specified in -pw or -spw, warning about files overwriting). 
+    | *WARNING:* Note that with this option enabled, the user won't be asked for anything, so an error will be returned in case a password is missing and files might be overwritten without any confirmation first.
+
   * **-spw, --secret_password** *[default: None]*
 
     | Env var pointing the Elasticsearch password. If neither this or *-pw/--password* are set, a prompt password will be asked for (leave blank if not needed).

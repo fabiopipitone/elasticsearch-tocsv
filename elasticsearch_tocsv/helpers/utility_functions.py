@@ -51,7 +51,7 @@ def denest(fields, obj):
 
 def final_pw(args, log):
   pw = args['password'] if args['password'] != None else os.environ[args['secret_password']] if args['secret_password'] != None and args['secret_password'] in os.environ else ''
-  if pw == '':
+  if pw == '' and not args['silent_mode']:
     pw = (getpass.getpass("Enter your es instance password. If not needed, press ENTER:  ")).strip()
   if args['user'] == '' and pw != '': log.warning(wrap_orange('You set a password but not a user. You either forgot to set the user or you set a useless password. If something goes wrong with the authentication, this warning might ring a bell :)'))
   return pw

@@ -45,8 +45,8 @@ def check_valid_certificate_combinations(args, log):
   elif args['cert_verification'] is True:
     test_certificate(args, f"There's a mismatch between the certificate you passed ({args['certificate_path']}) and the one of the ES instance. ")
   elif args['ssl'] is True and args['cert_verification'] is False:
-    print(wrap_orange("\nYou're connecting to a ES instance over SSL but without any certificate verification. Be sure you know the risks (e.g. MITM attack)."))
-    proceed_without_cert_verification = ''
+    log.warning(wrap_orange("You're connecting to a ES instance over SSL but without any certificate verification. Be sure you know the risks (e.g. MITM attack)."))
+    proceed_without_cert_verification = 'y' if args['silent_mode'] else ''
     while proceed_without_cert_verification not in ['y', 'n']:
       proceed_without_cert_verification = input(wrap_orange(f"\nDo you want to proceed? (y/n)")).lower().strip()
       if proceed_without_cert_verification == 'n':

@@ -13,13 +13,15 @@ def main():
   log = CustomLogger(__name__).logger
   args = fetch_arguments()
 
+  if args['silent_mode']: log.warning(wrap_orange(f"You are running the tool in -sm/--silent_mode. Thus warning messages will be printed (e.g. SSL warnings, files overwriting warnings) but no confirmation will be asked.\n"))
+
   if not args['cert_verification']:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
   args = check_arguments_conflicts(args, log)
 
   if args['aggregate_only'] == False:
-    check_csv_already_written(args['export_path'])
+    check_csv_already_written(args['export_path'], args['silent_mode'], log)
 
     log.info(wrap_green(bold("################### EXTRACTING DATA ###################\n")))
 
