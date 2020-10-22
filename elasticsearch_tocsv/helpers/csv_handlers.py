@@ -2,14 +2,14 @@ import os, sys, glob
 import pandas as pd
 from .color_wrappers import *
 
-def check_csv_already_written(filename, silent_mode, log):
+def check_csv_already_written(filename, silent_mode, log, operation_type):
   if os.path.exists(filename):
     overwrite_file = 'y' if silent_mode else ''
     log.warning(wrap_orange(f"There is already a csv file at the given path ({filename}) that will be overwritten."))
     while overwrite_file not in ['y', 'n']:
       overwrite_file = input(wrap_orange(f"\nDo you want to overwrite it? (y/n)")).lower().strip()
     if overwrite_file == 'n':
-      sys.exit(wrap_red(wrap_blue("\nExiting script not to overwrite the file. No query has been run.")))
+      sys.exit(wrap_red(wrap_blue(f"\nExiting script not to overwrite the file. No {operation_type} has been run.")))
     elif overwrite_file != 'y':
       print("Sorry, I can't understand the answer. Please answer with 'y' or 'n'")
   return filename

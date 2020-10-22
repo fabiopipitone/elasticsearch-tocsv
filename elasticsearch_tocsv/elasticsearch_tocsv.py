@@ -21,7 +21,7 @@ def main():
   args = check_arguments_conflicts(args, log)
 
   if args['aggregate_only'] == False:
-    check_csv_already_written(args['export_path'], args['silent_mode'], log)
+    check_csv_already_written(args['export_path'], args['silent_mode'], log, 'query')
 
     log.info(wrap_green(bold("################### EXTRACTING DATA ###################\n")))
 
@@ -79,6 +79,7 @@ def main():
 
   # Create aggregation file if needed
   if args['aggregation_fields'] != None:
+    check_csv_already_written(args['aggregated_export_path'], args['silent_mode'], log, 'aggregation')
     if args['aggregate_only']: 
       log.info(wrap_green(bold("################# AGGREGATING RAW FILE ################\n")))
     else:
