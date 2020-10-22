@@ -9,7 +9,7 @@ setup(
   author='Fabio Pipitone',
   author_email='fabio.pipitone93@gmail.com',
   url='https://github.com/fabiopipitone/elasticsearch-tocsv',
-  description='Simple python tool to extract massive amounts of documents from Elasticsearch into a csv file exploiting multiprocessing and leveraging the underneath elasticsearch-py package',
+  description='Simple python tool to extract massive amounts of documents - raw or aggregated - from Elasticsearch into a csv file exploiting multiprocessing and leveraging the underlying elasticsearch-py package',
   long_description=long_description,
   long_description_content_type='text/x-rst',
   license ='GPLv2',

@@ -1,7 +1,7 @@
 Python Elasticsearch-to-CSV Export Tool
 =======================================
 
-Simple Python CLI tool to easily extract a massive amount of Elasticsearch documents into a csv file, exploiting multiprocessing features and leveraging the underlying elasticsearch-py package.
+Simple Python CLI tool to easily extract a massive amount of Elasticsearch documents - raw or aggregated - into a csv file, exploiting multiprocessing features and leveraging the underlying elasticsearch-py package.
 
 |
 
@@ -51,6 +51,7 @@ Running ``elasticsearch_tocsv --help`` on the terminal you will be presented wit
 
 
   **OPTIONAL**
+
   * **-aep, --aggregated_export_path** *[default: aggregated_es_export.csv]*
 
     | Path where to store the aggregated csv file.
