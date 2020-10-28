@@ -18,7 +18,7 @@ def make_intervals_by_load(args, processes, starting_date, ending_date):
   multiplier = 1
   edate = datetime.fromtimestamp(sdate_in_seconds + multiplier * args['load_balance_interval']).astimezone(args['timezone']).isoformat()
   pbar = tqdm(total=total_hits, position=1, leave=True, desc="Building load_weighted time intervals", ncols=150, mininterval=0.05) if not args['disable_progressbar'] else None
-  if args['disable_progressbar']: log.info(wrap_blue("Building load_weighted time intervals. This operation might take a while depending on the ration total_hits_counted/load_balance_interval..."))
+  if args['disable_progressbar']: log.info(wrap_blue("Building load_weighted time intervals. This operation might take a while depending on the ratio total_hits_counted/load_balance_interval..."))
   while len(dates_for_processes[0]) < processes:
     partial_count_query = build_es_query(args, sdate, edate, count_query=True) 
     hits = request_to_es(args['count_url'], partial_count_query, log, args['user'], args['password'], verification=args['certificate_path'])['count']
@@ -29,16 +29,16 @@ def make_intervals_by_load(args, processes, starting_date, ending_date):
       dates_for_processes[1].append(edate)
       sdate = edate
       sdate_in_seconds = dateparser.parse(sdate).timestamp()
-      edate = datetime.fromtimestamp(sdate_in_seconds + multiplier * args['load_balance_interval']).astimezone(args['timezone']).isoformat()
+      edate = datetime.fromtimestamp(sdate_in_seconds + multiplier * args['load_balance_interval']).replace(tzinfo=args['timezone']).isoformat()
     else: 
       multiplier += 1
-      edate = datetime.fromtimestamp(sdate_in_seconds + multiplier * args['load_balance_interval']).astimezone(args['timezone']).isoformat()
+      edate = datetime.fromtimestamp(sdate_in_seconds + multiplier * args['load_balance_interval']).replace(tzinfo=args['timezone']).isoformat()
     if dateparser.parse(edate) > dateparser.parse(ending_date):
       final_intervals = make_time_intervals(args, processes - len(dates_for_processes[0]), sdate, ending_date)
       return [dates_for_processes[i] + final_intervals[i] for i in range(2)]
     if len(dates_for_processes[0]) == processes - 1:
       dates_for_processes[0].append(sdate)
-      dates_for_processes[0].append(ending_date)
+      dates_for_processes[1].append(ending_date)
   return dates_for_processes
 
 def make_time_intervals(args, processes, starting_date, ending_date):
