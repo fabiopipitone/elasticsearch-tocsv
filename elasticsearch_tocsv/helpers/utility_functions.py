@@ -58,7 +58,7 @@ def final_pw(args, log):
 
 def add_timezone(date_string, timezone):
   try:
-    return dateparser.parse(date_string).astimezone(timezone).isoformat()
+    return dateparser.parse(date_string).replace(tzinfo=timezone).isoformat()
   except:
     sys.exit(wrap_red(f"The date you set ({date_string}) (either --starting_date or --ending_date) is not in the valid iso8601 format (YYYY-MM-ddTHH:mm:ss) and the dateparser raised an exception. Please use the standard iso8601 format"))
 
