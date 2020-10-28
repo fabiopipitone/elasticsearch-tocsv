@@ -237,6 +237,8 @@ def check_arguments_conflicts(args, log):
   args['timezone'] = check_timezone_validity(args['timezone'], log)
   check_valid_date(args['starting_date'])
   check_valid_date(args['ending_date'])
+  if not valid_bound_dates(args):
+    sys.exit(wrap_red(f"\nThe --starting_date you set ({args['starting_date']}) comes after the --ending_date ({args['ending_date']}). Please set a valid time interval"))
   if args['time_field'] != None: args['starting_date'], args['ending_date'] = get_actual_bound_dates(args, args['starting_date'], args['ending_date']) 
 
   args['fields'] = check_fields(args['fields'])
@@ -248,7 +250,5 @@ def check_arguments_conflicts(args, log):
     args['load_balance_interval'] = parse_lbi(args['load_balance_interval'], args['allow_short_interval'], args['enable_multiprocessing']) 
     check_valid_lbi(args['starting_date'], args['ending_date'], args['load_balance_interval'])
 
-  if not valid_bound_dates(args):
-    sys.exit(wrap_red(f"\nThe --starting_date you set ({args['starting_date']}) comes after the --ending_date ({args['ending_date']}). Please set a valid time interval"))
 
   return args
