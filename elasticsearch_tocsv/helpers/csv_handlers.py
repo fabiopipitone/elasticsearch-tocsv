@@ -16,14 +16,15 @@ def check_csv_already_written(filename, silent_mode, log, operation_type):
 
 def write_csv(export_path, fields_to_export, separator, decimal_separator, decimal_rounding, exception_message='', df=None, list_to_convert=False, index=False, new_fields={}):
   df = pd.DataFrame(list_to_convert, columns=fields_to_export) if list_to_convert else df
-  df = df.round(decimal_rounding)
-  try:
-    if fields_to_export is None:
-      df.to_csv(export_path, index=index, sep=separator, decimal=decimal_separator)
-    else:
-      df.to_csv(export_path, index=index, columns=fields_to_export, sep=separator, decimal=decimal_separator)
-  except Exception as e:
-    sys.exit(wrap_red(f"{exception_message} Here's the exception: \n\n{e}"))
+  if df is not None: 
+    df = df.round(decimal_rounding)
+    try:
+      if fields_to_export is None:
+        df.to_csv(export_path, index=index, sep=separator, decimal=decimal_separator)
+      else:
+        df.to_csv(export_path, index=index, columns=fields_to_export, sep=separator, decimal=decimal_separator)
+    except Exception as e:
+      sys.exit(wrap_red(f"{exception_message} Here's the exception: \n\n{e}"))
 
 def join_partial_csvs(filename, separator, decimal_separator):
   try: 
