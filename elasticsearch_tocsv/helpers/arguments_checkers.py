@@ -85,7 +85,7 @@ def valid_bound_dates(args):
   if args['starting_date'] != 'now-1000y' and args['ending_date'] != 'now+1000y':
     sdate = dateparser.parse(args['starting_date']).astimezone(args['timezone'])
     edate = dateparser.parse(args['ending_date']).astimezone(args['timezone'])
-    return edate > sdate
+    return edate >= sdate
   return True
 
 def check_timezone_validity(timezone, log):
@@ -176,18 +176,18 @@ def check_valid_rename(renamed_aggregations, log):
     return aggregation_names
 
 def get_actual_bound_dates(args, starting_date, ending_date):
-  search_url = "{url_prefix}://{host}:{port}/{index}/_search".format(**args)
+  #search_url = "{url_prefix}://{host}:{port}/{index}/_search".format(**args)
   timezone = args['timezone']
   starting_date = add_timezone(starting_date, timezone) if not starting_date == "now-1000y" else starting_date
   ending_date = add_timezone(ending_date, timezone) if not ending_date == "now+1000y" else ending_date
   # Fetch date of first element from the specified starting_date
-  sdate_query = build_es_query(args, starting_date, ending_date, 'asc', 1, source=args['time_field'].split())
-  r = request_to_es(search_url, sdate_query, args['log'], args['user'], args['password'], verification=args['certificate_path'])
-  starting_date = add_timezone(r['hits']['hits'][0]['_source'][args['time_field']], timezone)
+  #sdate_query = build_es_query(args, starting_date, ending_date, 'asc', 1, source=args['time_field'].split())
+  #r = request_to_es(search_url, sdate_query, args['log'], args['user'], args['password'], verification=args['certificate_path'])
+  #starting_date = add_timezone(r['hits']['hits'][0]['_source'][args['time_field']], timezone)
   # Fetch date of last element before the specified ending_date
-  edate_query = build_es_query(args, starting_date, ending_date, 'desc', 1, source=args['time_field'].split())
-  r = request_to_es(search_url, edate_query, args['log'], args['user'], args['password'], verification=args['certificate_path'])
-  ending_date = add_timezone(r['hits']['hits'][0]['_source'][args['time_field']], timezone)
+  #edate_query = build_es_query(args, starting_date, ending_date, 'desc', 1, source=args['time_field'].split())
+  #r = request_to_es(search_url, edate_query, args['log'], args['user'], args['password'], verification=args['certificate_path'])
+  #ending_date = add_timezone(r['hits']['hits'][0]['_source'][args['time_field']], timezone)
   # Return real starting_date and ending_date with proper timezone
   return [starting_date, ending_date]
 
